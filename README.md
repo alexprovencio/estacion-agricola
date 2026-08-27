@@ -1,1 +1,3 @@
-Estación agricola
+Estación Agrícola Autónoma diseñada como práctica final de la asignatura Sistemas Digitales para el Internet de las Cosas y continuada para la asignatura Comunicaciones Inalámbricas y Protocolos para el Internet de las Cosas del micromáster Micromáster en Internet de las Cosas de la UNED curso 2025/2026
+
+Hacer un resumen y esquema del sistema, como fabricarlo, compilarlo, instalarlo y estructura de los directorios que tenemos en el repositorio.
