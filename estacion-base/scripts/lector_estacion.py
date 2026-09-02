@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Lector de la estación base para las pruebas.
+# -*- coding: utf-8 -*-
+"""Estación Agrícola - Estación base - Lector.
+
+Lector de la estación base para las pruebas.
+
+Autor: Alejandro Provencio Sanz <aprovenci9@alumno.uned.es>
+Fecha: 2026-08-27
+
+Práctica final de Sistemas Digitales para el Internet de las Cosas.  
 
 Recibe de la estación el flujo de lecturas JSON (una por línea) que emite el
 nodo autónomo por su UART y las muestra de forma legible en pantalla.
 
 Uso:
-    python lector_estacion.py [/dev/ttyUSB0]
+    python lector_estacion.py [/dev/ttyxxx]
 """
 
 import json

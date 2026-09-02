@@ -6,21 +6,23 @@
  *
  * Práctica final de Sistemas Digitales para el Internet de las Cosas.
  *
- * Lee todos los sensores del nodo y envía las lecturas por el UART físico
- * (Serial1) hacia la estación base en formato JSON, una lectura por línea.
- * La consola de depuración sale por el USB (Serial) mientras se desarrolla.
+ * Lee todos los sensores del nodo y envía las lecturas por el USB
+ * en formato JSON para que la estación base las procese.
  *
  * @details
  * Mapa de conexiones (ESP32-C3 Supermini):
  * @code
- *   I2C SDA      <- GPIO0      AHT20+BMP280, VEML7700, INA226 y AS3935
- *   I2C SCL      <- GPIO1
- *   AS3935 IRQ   <- GPIO5      (interrupción de detección de rayos)
- *   ADC GUVA     GPIO3         (índice UV, entrada analógica)
- *   ADC Higrómetro GPIO4       (humedad de suelo, entrada analógica)
- *   DS18B20 data GPIO6         (temperatura de suelo, OneWire)
- *   UART TX      -> GPIO21     (hacia la estación base)
- *   UART RX      <- GPIO20     (desde la estación base)
+ *   Todos los módulos van alimentados a 3V3 y con GND común
+ *   I2C SDA        <- GPIO0  AHT20+BMP280, VEML7700, INA226 y AS3935
+ *   I2C SCL        <- GPIO1  AHT20+BMP280, VEML7700, INA226 y AS3935
+ *   AS3935 IRQ     <- GPIO5  Interrupción de detección de rayos
+ *   GUVA-S12SD ADC <- GPIO3  Índice UV, entrada analógica
+ *   Higrómetro ADC <- GPIO4  Humedad de suelo, entrada analógica
+ *   DS18B20 Data   <- GPIO6  Temperatura de suelo, OneWire, pull-up de 4,7 kΩ
+ *   Para el AS3935 además:
+ *      SI a 3V3
+*       MISO a GND
+*       CS a GND
  * @endcode
  */
 
@@ -34,34 +36,36 @@
 #include <INA226.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <SparkFun_AS3935.h> // Probar si esta rula
+#include <SparkFun_AS3935.h>
 
 // Pines
-#define PIN_I2C_SDA      0
-#define PIN_I2C_SCL      1
-#define PIN_AS3935_IRQ   5
-#define PIN_ADC_GUVA     3
+#define PIN_I2C_SDA        0
+#define PIN_I2C_SCL        1
+#define PIN_AS3935_IRQ     5
+#define PIN_ADC_GUVA       3
 #define PIN_ADC_HIGROMETRO 4
-#define PIN_DS18B20      6
-#define PIN_UART_RX      20
-#define PIN_UART_TX      21
+#define PIN_DS18B20        6
 
-#define UART_BAUD        115200
-#define INTERVALO_MS     5000
+#define UART_BAUD          115200
+// Tiempo entre lecturas de los sensores y envío de los datos
+#define INTERVALO_MS       5000
 
-// Dirección I2C del AS3935
-#define AS3935_ADDR      0x03
+// Dirección I2C de los módulos
+#define AS3935_ADDR        0x03 // A0 y A1 a VCC
+#define INA226_ADDR        0x40 // A0 y A1 a GND
+#define BMP280_ADDR        0x77
+// Dirección de backup del BMP280
+#define BMP280_B_ADDR      0x76
 
-// Códigos de evento que devuelve el AS3935 al leer su registro de interrupción
-#define RAYO_INT         0x08
-#define DISTURBER_INT    0x04
-#define RUIDO_INT        0x01
+// Códigos de evento que devuelve el AS3935 al leer la interrupción
+#define RAYO_INT           0x08
+#define DISTURBER_INT      0x04
+#define RUIDO_INT          0x01
 
 Adafruit_AHTX0 aht;
 Adafruit_BMP280 bmp;
 Adafruit_VEML7700 veml;
-// La dirección del INA226 es 0x40 por defecto
-INA226 ina(0x40);
+INA226 ina(INA226_ADDR);
 SparkFun_AS3935 rayos(AS3935_ADDR);
 OneWire oneWire(PIN_DS18B20);
 DallasTemperature ds18b20(&oneWire);
@@ -75,7 +79,7 @@ void IRAM_ATTR onAs3935() {
   as3935_pulsos++;
 }
 
-// Sensores ambientales: temperatura, humedad, presión y luz
+// Sensores ambientales: temperatura, humedad, presión, luz y UV (analógico)
 void leerAmbientales(JsonObject d) {
   sensors_event_t hum, temp;
   if (aht.getEvent(&hum, &temp)) {
@@ -86,9 +90,18 @@ void leerAmbientales(JsonObject d) {
     d["presion_hpa"] = bmp.readPressure() / 100.0;
   }
   d["luz_lux"] = veml.readLux();
+  d["uv"]     = analogRead(PIN_ADC_GUVA);  // índice UV, valor ADC crudo
+}
+
+// Sensores de suelo: temperatura y humedad (analógico)
+void leerSuelo(JsonObject d) {
+  ds18b20.requestTemperatures();
+  d["temp_suelo"] = ds18b20.getTempCByIndex(0);
+  d["hum_suelo"]  = analogRead(PIN_ADC_HIGROMETRO);
 }
 
 // Módulo de energía INA226: tensión, corriente y potencia de la batería
+// No usado de momento porque no tenemos batería PROBARLO
 void leerEnergia(JsonObject d) {
   d["v_bat"] = ina.getBusVoltage();
   d["i_ma"]  = ina.getCurrent_mA();
@@ -102,19 +115,20 @@ void leerRayos(JsonObject d) {
     as3935_interrupt = false;
     int evento = rayos.readInterruptReg();
     switch (evento) {
-      // Es un rayo
+      // Es un rayo!
       case RAYO_INT:
         d["estado"] = "rayo";
         d["dist_km"] = rayos.distanceToStorm();
         break;
-      // Es una falsa detección
+      // interferencias eléctricas
       case DISTURBER_INT:
         d["estado"] = "disturber";
         break;
-      // Es ruido
+      // Nivel de ruido ambiental demasiado alto
       case RUIDO_INT:
         d["estado"] = "ruido";
         break;
+      // Esto ocurría cuando estaba mal conectado el pin de interrupción
       default:
         d["estado"] = "desconocido";
         break;
@@ -125,31 +139,17 @@ void leerRayos(JsonObject d) {
   }
 }
 
-// Devuelve la frecuencia medida en kHz para calibrar el AS3935 sin osciloscopio
-float calibrarRayos() {
-  rayos.changeDivRatio(128);
-  rayos.displayOscillator(true, 3);  // LCO (frecuencia de la antena) -> IRQ
-  as3935_pulsos = 0;
-  as3935_interrupt = false;
-  delay(1000);
-  float fAntena = as3935_pulsos * 128.0 / 1000.0;  // kHz
-  rayos.displayOscillator(false, 3);
-  as3935_interrupt = false;
-  return fAntena;
-}
-
 void setup() {
   // Consola de depuración por USB (Serial)
   Serial.begin(UART_BAUD);
-  // Enlace con la estación base por el UART físico (Serial1)
-  Serial1.begin(UART_BAUD, SERIAL_8N1, PIN_UART_RX, PIN_UART_TX);
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   pinMode(PIN_AS3935_IRQ, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_AS3935_IRQ), onAs3935, RISING);
 
   aht.begin();
-  bmp.begin(0x76); // Comprobar que la dirección está bien
+  // El BMP280 puede tener dos direcciones
+  if (!bmp.begin(BMP280_ADDR)) bmp.begin(BMP280_B_ADDR);
   bmp.setSampling(Adafruit_BMP280::MODE_FORCED);
   veml.begin();
   ina.begin();
@@ -157,14 +157,12 @@ void setup() {
 
   if (rayos.begin()) {
     rayos.setIndoorOutdoor(OUTDOOR);
+    // Ajustar esto para usarlo realmente
+    //rayos.setNoiseLevel(2-4)
+    //rayos.watchdogThreshold(2)
+    //rayos.spikeRejection(2-3)
     delay(50);
 
-    // Comprobación de la sintonía de la antena, debe ser unos 500 kHz
-    float fAntena = calibrarRayos();
-    Serial.printf("AS3935 listo (exterior), antena ~%.0f kHz\n", fAntena);
-    if (fAntena < 482.5f || fAntena > 517.5f) {
-      Serial.println("ATENCION: antena fuera de rango, calibrar!");
-    }
   } else {
     Serial.println("Error: AS3935 no responde");
   }
@@ -173,20 +171,14 @@ void setup() {
 }
 
 void loop() {
-  ds18b20.requestTemperatures();
-
   JsonDocument doc;
   doc["t"] = millis() / 1000;
   leerAmbientales(doc["amb"].to<JsonObject>());
+  leerSuelo(doc["suelo"].to<JsonObject>());
   leerEnergia(doc["energia"].to<JsonObject>());
   leerRayos(doc["rayos"].to<JsonObject>());
-  doc["temp_suelo"] = ds18b20.getTempCByIndex(0);
-  doc["hum_suelo"]  = analogRead(PIN_ADC_HIGROMETRO);
-  doc["uv"]         = analogRead(PIN_ADC_GUVA);
 
-  serializeJson(doc, Serial1);
-  Serial1.println();
-  serializeJson(doc, Serial);   // eco en consola USB mientras se depura
+  serializeJson(doc, Serial);  // Lo sacamos por el USB
   Serial.println();
 
   delay(INTERVALO_MS);

@@ -16,8 +16,24 @@ Hay que prestar atención a controlar los posibles errores de conexión que se p
 
 # Introducción
 # Nodo solar autónomo
+
+## Alimentación
+
+- INA226: Conectado por I2C entre el CN3791, la batería y el ESP32, permite medir con extrema precisión (16 bits) el voltaje de la batería, la corriente de carga/descarga y el consumo en vatios. Uso la [librería de RobTillaart](https://github.com/RobTillaart/INA226) para el INA226.
+- CN3791: para mejorar el rendimiento del panel solar.
+- Panel solar pendiente de elegir.
+- Batería: batería de litio con protección integrada.
+- Hay que usar un regulador de voltaje para alimentar directamente el ESP32, lo puedo hacer a 3,3V <https://zbotic.in/solar-power-for-esp32-mppt-and-battery-charging-circuit/>
+
 # Comunicaciones
 # Estación base
+
+## Configuración del broker MQTT Mosquitto
+
+Quito la contraseña del broker MQTT
+Broker probado y funcionando en la Raspberry Pi.
+Realizar el diseño de los temas en el broker de la estación base
+
 # Estación auxiliar
 # Mejoras futuras
 # Conclusiones

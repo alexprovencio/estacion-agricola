@@ -1,0 +1,8 @@
+pyserial
+RPi.GPIO
+Pillow
+luma.lcd
+luma.core
+adafruit-circuitpython-neopixel
+py-espeak-ng
+requests

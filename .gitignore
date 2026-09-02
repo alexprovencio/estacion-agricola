@@ -6,6 +6,12 @@ __pycache__/
 venv/
 env/
 
+# Secretos (tokens, claves) - no se suben
+.env
+
+# Datos locales (logs por arranque) - no se suben
+data/
+
 # Entornos conda
 *.yml.bak
 
