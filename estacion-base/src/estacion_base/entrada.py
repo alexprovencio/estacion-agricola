@@ -10,9 +10,10 @@ Fecha: 2026-08-31
 Práctica final de Sistemas Digitales para el Internet de las Cosas.   
 
 - Giro: cambia la selección dentro de los menús de relés/duración.
-- Botón del encoder: corto entra en los menús; largo apaga todos los
-  relés y vuelve a la pantalla principal.
-- Botón externo KEY0: retrocede en el menú y silencia las alertas.
+- Botón del encoder: pulsación corta, entra en los menús y confirma 
+  la duración de activación del relé.
+- Botón externo KEY0: corta retrocede en el menú y silencia las alertas,
+  larga apaga además todos los relés y vuelve a la pantalla principal.
 """
 
 import threading
@@ -51,7 +52,7 @@ def _push():
         estado.estado_ui = estado.ESTADO_PRINCIPAL
 
 def _push_largo():
-    """Pulsación larga del encoder.
+    """Pulsación larga del botón externo KEY0.
     Apaga todos los relés y alertas y vuelve a la pantalla principal.
     """
     perifericos.apagar_reles()
@@ -87,30 +88,24 @@ def hilo():
 
         # Botón del encoder
         if GPIO.input(config.PIN_EC_PSH) == 0:
+            while estado.running and GPIO.input(config.PIN_EC_PSH) == 0:
+                time.sleep(0.02)
+            _push()
+            time.sleep(0.2)
+
+        # Botón externo KEY0: corta = menú/silenciar, larga = apagar todo
+        if GPIO.input(config.PIN_K0) == 0:
             tiempo_presion = time.time()
             tiempo_largo = 1.0
-            
-            # Esperar a que se suelte el botón o se detecte pulsación larga
-            while estado.running and GPIO.input(config.PIN_EC_PSH) == 0:
+            while estado.running and GPIO.input(config.PIN_K0) == 0:
                 time.sleep(0.02)
                 if time.time() - tiempo_presion > tiempo_largo:
                     break
-            
-            # Ejecutar acción según duración de presión
             duracion = time.time() - tiempo_presion
             if duracion > tiempo_largo:
                 _push_largo()
             else:
-                _push()
-            
-            time.sleep(0.2)
-
-        # Botón externo KEY0
-        if GPIO.input(config.PIN_K0) == 0:
-            # Esperar a que se suelte el botón externo KEY0
-            while estado.running and GPIO.input(config.PIN_K0) == 0:
-                time.sleep(0.02)
-            _extra()
+                _extra()
             time.sleep(0.2)
 
         time.sleep(0.01)

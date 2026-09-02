@@ -45,10 +45,12 @@
 #define PIN_ADC_GUVA       3
 #define PIN_ADC_HIGROMETRO 4
 #define PIN_DS18B20        6
+// LED integrado (GPIO8)
+#define PIN_LED             8
 
 #define UART_BAUD          115200
 // Tiempo entre lecturas de los sensores y envío de los datos
-#define INTERVALO_MS       5000
+#define INTERVALO_MS       4920
 
 // Dirección I2C de los módulos
 #define AS3935_ADDR        0x03 // A0 y A1 a VCC
@@ -145,6 +147,8 @@ void setup() {
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   pinMode(PIN_AS3935_IRQ, INPUT);
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_LED, HIGH);
   attachInterrupt(digitalPinToInterrupt(PIN_AS3935_IRQ), onAs3935, RISING);
 
   aht.begin();
@@ -179,7 +183,11 @@ void loop() {
   leerRayos(doc["rayos"].to<JsonObject>());
 
   serializeJson(doc, Serial);  // Lo sacamos por el USB
+  // Parpadeo del LED integrado para indicar envío
+  digitalWrite(PIN_LED, LOW);
   Serial.println();
+  delay(80);
+  digitalWrite(PIN_LED, HIGH);
 
   delay(INTERVALO_MS);
 }
