@@ -2,7 +2,7 @@
 
 Sistema de medición ambiental y del suelo para huertas al aire libre, construido como práctica final de **Sistemas Digitales para el Internet de las Cosas** y continuado en **Comunicaciones Inalámbricas y Protocolos para el Internet de las Cosas** (micromáster IoT, UNED, curso 2025/2026).
 
-![Sistema completo con el panel de control de Ubidots](docs/static/sistema-completo.jpg){width=500px}
+![Sistema completo con el panel de control de Ubidots](docs/static/sistema-completo.jpg)
 
 ## Qué hace
 
