@@ -1,6 +1,10 @@
-# 1.Introducción
+# 1. Introducción
 
-La idea para este trabajo es realizar un sistema completo de mediciones ambientales y del suelo para agricultura inteligente, más orientada a horticultura o a regadío que a cultivos de cereales, aunque también sería aplicable. El sistema en principio lo he diseñado para usarlo en huertas al aire libre y realizará las siguientes mediciones mediante un nodo autónomo instalado *in situ*:
+La idea para este trabajo es realizar un sistema completo de mediciones ambientales y del suelo para agricultura inteligente. En principio lo he diseñado para usarlo en huertas, viveros, invernaderos o cultivos extensos, fundamentalmente de regadío. Como ejemplo de empresa de mi zona que podría emplearlo están los viveros El Ejidillo[^2] en Valdesimonte, Segovia, con un terrero de cultivo de 65 hectáreas.
+
+![Fotografía de los viveros El Ejidillo](static/viveros-el-ejidillo.png){width=80%}
+
+El sistema realizará las siguientes mediciones mediante un nodo autónomo instalado *in situ*:
 
 - Temperatura ambiente: para detectar estrés térmico por calor o frío excesivos y predecir heladas.
 - Humedad relativa del aire: podemos anticipar la aparición de enfermedades debidas a la alta humedad y, combinado con la temperatura, calcular la transpiración de las plantas con el fin de dimensionar el riego.
@@ -21,7 +25,7 @@ Cabe señalar que he decidido aprovechar buena parte del hardware que ya tenía 
 
 ![Sistema completo con el panel de control de Ubidots](static/sistema-completo.jpg){width=600px}
 
-# 2.Nodo solar autónomo
+# 2. Nodo solar autónomo
 
 El nodo solar autónomo está compuesto de un ESP32-C3 Supermini de TENSTAR ROBOT[^3] como unidad de procesamiento. Este microcontrolador tiene las siguientes características relevantes para nosotros:
 
@@ -33,11 +37,11 @@ El nodo solar autónomo está compuesto de un ESP32-C3 Supermini de TENSTAR ROBO
 
 ![TENSTAR ROBOT ESP32-C3 Super Mini](static/esp32-c3.png){width=250px}
 
-Usaré para programar la extensión *PlatformIO* de *VS Code* con el framework *Arduino*, que dispone de muchas librerías ya probadas para los sensores que emplearé.
+Usaré para programar la extensión *PlatformIO* de *Visual Studio Code* con el framework *Arduino*, que dispone de muchas librerías ya probadas para los sensores que emplearé.
 
 ![Desarrollo del prototipo del nodo autónomo](static/prototipo.png){width=600px}
 
-## 2.1.Sensores ambientales
+## 2.1. Sensores ambientales
 
 A este microcontrolador conecto los siguientes sensores:
 
@@ -47,11 +51,11 @@ A este microcontrolador conecto los siguientes sensores:
 
 - GUVA-S12SD: calcula el índice UV para luces de longitudes de onda de 240 nm a 370 nm con salida analógica y salida entre 0 y 1 V. Lo leo directamente usando un pin ADC y lo convierto suponiendo que 1 V equivale a un 10 en el índice de radiación ultravioleta.
 
-- AS3935: usado para detectar rayos y estimar la distancia a la tormenta. Puede detectar rayos hasta a 40 km con una precisión de 1 km en 14 pasos. Tiene un pin de alerta que conecto al ESP32-C3 para avisar de descargas en tiempo real. Es sensible a las interferencias electromagnéticas (EMI) de los convertidores DC-DC, pantallas y el propio WiFi/Bluetooth del ESP32-C3 por lo que, idealmente, habría que situarlo en una caja estanca[^9] a cierta distancia del resto de componentes de nuestro nodo autónomo. Se puede conectar usando SPI o I2C, lo conecto usando I2C pese a que dicen que suele funcionar mejor usando SPI para economizar pines del microcontrolador. Uso la librería de *SparkFun*[^8] pese a que mi módulo (etiquetado como CJMCU[^10]) ni se parece al suyo, pero parece funcionar bien. Lo puedo activar usando el cuarzo de un mechero, o acercándolo a los propios relés y activándolos, así detecta a veces incluso un rayo para las pruebas, aunque la mayoría de las veces detecta solo interferencias o ruido, que internamente diferencia de los rayos de verdad usando algoritmos de validación de señal y picos configurables que yo, de momento, no he tocado.
+- AS3935: usado para detectar rayos y estimar la distancia a la tormenta. Puede detectar rayos hasta a 40 km con una precisión de 1 km en 14 pasos. Tiene un pin de alerta que conecto al ESP32-C3 para avisar de descargas en tiempo real mediante el uso de una interrupción. Es sensible a las interferencias electromagnéticas (EMI) de los convertidores DC-DC, pantallas y el propio WiFi/Bluetooth del ESP32-C3 por lo que, idealmente, habría que situarlo en una caja estanca[^9] a cierta distancia del resto de componentes de nuestro nodo autónomo. Se puede conectar usando SPI o I2C, lo conecto usando I2C pese a que dicen que suele funcionar mejor usando SPI para economizar pines del microcontrolador. Uso la librería de *SparkFun*[^8] pese a que mi módulo (etiquetado como CJMCU[^10]) ni se parece al suyo, pero parece funcionar bien. Lo puedo activar usando el cuarzo de un mechero, o acercándolo a los propios relés y activándolos, así detecta a veces incluso un rayo para las pruebas, aunque la mayoría de las veces detecta solo interferencias o ruido, que internamente diferencia de los rayos de verdad usando algoritmos de validación de señal y picos configurables que yo, de momento, no he tocado.
 
 ![Sensores ambientales empleados](static/sensores-ambientales.png){width=400px}
 
-## 2.2.Sensores de suelo
+## 2.2. Sensores de suelo
 
 - Higómetro de suelo FC-28: mide la humedad de la tierra usando un sensor simple por variación de conductividad[^11]. La placa de medición, que emplea un comparador LM393, devuelve valores analógicos o una señal alta digital cuando la humedad supera cierto umbral que podemos definir con un potenciómetro. Uso la salida analógica con el ADC de 12 bits del ESP32-C3 para obtener valores entre 0 y 4096. Metiendo el sensor en un vaso de agua calculo un valor de 1800 para 100% de humedad y 4096 para 0%, aunque tal como funciona este sensor sus mediciones solo deberían servirnos para saber si la tierra está húmeda o no, y no tener muy en cuenta el valor que devuelve.
 
@@ -59,7 +63,7 @@ A este microcontrolador conecto los siguientes sensores:
 
 ![Sensores de suelo](static/sensores-suelo.png){width=400px}
 
-## 2.3.Comunicación con la estación base
+## 2.3. Comunicación con la estación base
 
 Los datos se envían por serie cada 5 segundos a la estación base a través del puerto USB, que también nos sirve de alimentación, en formato JSON usando la librería *ArduinoJSON*[^4]. Este es el formato empleado:
 
@@ -86,7 +90,7 @@ Los datos se envían por serie cada 5 segundos a la estación base a través del
 | `rayos.estado` | string | `ok` \| `disturber` \| `rayo` \| `ruido` \| `desconocido` (AS3935) |
 | `rayos.dist_km` | int km | distancia al frente de tormenta (solo si `estado`=`rayo`) |
 
-## 2.4.Alimentación
+## 2.4. Alimentación
 
 Alimento todo desde el ESP32-C3 alimentado a su vez por USB desde la estación base. Todos los sensores funcionan a 3,3 V sacados del regulador interno del ESP32-C3.
 
@@ -94,7 +98,7 @@ He dejado conectado un módulo con un INA226 para medir voltajes y corrientes de
 
 ![Esquema de conexiones del nodo autónomo (Cirkit Designer)](static/nodo-autonomo-circuito.png){width=600px}
 
-# 3.Estación base
+# 3. Estación base
 
 Usaré mi vieja y fiable Raspberry Pi 1 Model B Rev1.0 que empleé para una de las prácticas de la asignatura Comunicaciones Inalámbricas y Protocolos para el Internet de las Cosas. Esta versión tiene las siguientes características relevantes:
 - Procesador: Broadcom BCM2835 con núcleo único ARM1176JZF-S a 700 MHz.
@@ -107,7 +111,7 @@ Usaré mi vieja y fiable Raspberry Pi 1 Model B Rev1.0 que empleé para una de l
 
 ![Mi Raspberry Pi 1 Model B Rev1.0](static/raspberry.jpg){width=400px}
 
-## 3.1.Periféricos
+## 3.1. Periféricos
 
 - Pantalla: la empleo para mostrar los datos recibidos del nodo, incluyendo alertas y controlar los relés conectados a la estación base. Uso un módulo con una pantalla de 2 pulgadas con una controladora ST7789 y 320x240 px de resolución con codificador rotatorio EC11 y un botón extra integrados (en la práctica 4 botones). La pantalla se conecta por SPI usando la librería *luma.lcd*[^19] y se dibuja usando *Pillow*[^21]. La pantalla funciona a 3,3 V sacados de la cabecera de la Raspberry Pi.
 
@@ -119,13 +123,13 @@ Usaré mi vieja y fiable Raspberry Pi 1 Model B Rev1.0 que empleé para una de l
 
 ![La estación base ya montada. La Raspberry Pi está en la parte posterior](static/estacion-base.jpg){width=400px}
 
-## 3.2.Alimentación
+## 3.2. Alimentación
 
 La estación base, y todos sus periféricos, se alimentan a través de una fuente de 5V 3A conectada a la toma de alimentación de la Raspberry Pi. Tengo que arrancar la estación base con el nodo autónomo conectado porque si lo conecto después la Raspberry Pi se bloquea por el pico de potencia requerido, no es un gran inconveniente.
 
 ![Esquema de conexiones de la estación base (Cirkit Designer)](static/estacion-base-circuito.png){width=600px}
 
-## 3.3.Configuración inicial
+## 3.3. Configuración inicial
 
 Uso *DietPi*[^1] como imagen para la Raspberry Pi dado que es una imagen mínima y tiene mejor rendimiento (el sistema en funcionamiento consume menos de 55 MB de RAM) que una imagen de *Raspbian* completa.
 
@@ -135,7 +139,7 @@ Activo el audio instalando *ALSA* y configurando la tarjeta de sonido para que u
 
 También son necesarios los paquetes adicionales `libjpeg-dev libtiff6 libopenjp2-7 libxcb1 libfreetype6` para que funcione la pantalla y el paquete `espeak-ng` para los avisos hablados.
 
-## 3.4.Programa de monitorización y control
+## 3.4. Programa de monitorización y control
 
 El programa de la estación base, escrito en Python y organizado como paquete instalable, recibe del nodo por el puerto USB el JSON con los datos de los sensores y muestra por la pantalla los valores obtenidos del nodo autónomo y permite la activación de los relés durante una duración de tiempo variable. Uso GitHub[^22] para sincronizar mi repositorio local, después de clonarlo e instalar las dependencias del sistema podemos instalar el programa usando:
 
@@ -171,7 +175,7 @@ El siguiente diagrama muestra la arquitectura del programa y el flujo de datos:
 
 ![Arquitectura del programa y flujo de datos](static/arquitectura.png){width=700px}
 
-# 4.Plataforma IoT en la nube: Ubidots
+# 4. Plataforma IoT en la nube: Ubidots
 
 Elijo *Ubidots STEM*[^20] por su sencillez y porque creo que su cuenta gratuita cubre mis requisitos pese a estar limitada. El panel de control que uso muestra todos los datos del nodo además del estado de los relés y permite su accionamiento remoto.
 
@@ -201,9 +205,11 @@ Separo los datos que envío en dos dispositivos: `nodo-1` con los sensores y `es
 
 - `rele_N`: 0/1 con el estado real de cada relé. Señalar que se envía 0 para apagado y 1 para encendido, al contrario de como funcionan realmente (activos en LOW).
 
-Tuve algún problema de rebote con los relés al compartir en *Ubidots* su estado y su accionamiento, y de hecho su funcionamiento sigue sin ser perfecto, pero era más una prueba de concepto que otra cosa puesto que la intención es controlar los relés directamente desde la estación base, ya sea usando automatizaciones o su control manual integrado.
+Tuve algún problema de rebote con los relés al compartir en *Ubidots* su estado y su accionamiento, y de hecho su funcionamiento sigue sin ser perfecto, pero era más una prueba de concepto que otra cosa puesto que la intención es controlar los relés directamente desde la estación base, ya sea usando automatizaciones o su control manual integrado. Se han implementado mecanismos de control de errores (404, 429) en la transmisión también con el fin de evitar el uso excesivo de la API proporcionada.
 
-# 5.Mejoras futuras
+# 5. Conclusiones y mejoras futuras
+
+Esta práctica me ha servido para poner en práctica los conocimientos adquiridos durante el curso y sortear limitaciones de hardware, también para tratar de realizar un código más limpio y tener en cuenta aspectos como la limpieza de los pines GPIO y dispositivos al salir que a veces no tenemos en cuenta. Tampoco me ha supuesto un desafío excesivo, si no contamos con el tiempo invertido en cosas prescindibles como mejorar la interfaz gráfica de la pantalla empleada o el uso de los relés a distancia desde Ubidots, dado que me dedico a la programación de sistemas embebidos (fundamentalmente STM32 en C puro). Considero útil también el descubrimiento de Ubidots y su facilidad de uso a la hora de visualizar datos.
 
 Hay muchas mejoras que se pueden implementar en el sistema, algunas de ellas se llevarán a cabo en la práctica final de la asignatura Comunicaciones Inalámbricas y Protocolos para el Internet de las Cosas. Entre ellas destaco:
 
@@ -219,9 +225,8 @@ Hay muchas mejoras que se pueden implementar en el sistema, algunas de ellas se 
 - Usar mejores sensores de suelo ya que los empleados se corroen fácilmente como he comprobado.
 - Crear PCBs para todo el sistema, especialmente para el nodo autónomo, y así reducir su tamaño y coste.
 
-# 6.Conclusiones
-
 [^1]: DietPi - Lightweight justice for your SBC!. Disponible en: <https://dietpi.com/>. Accedido el 12/8/2026.
+[^2]: Viveros Integrales El Ejidillo Disponible en: <https://ejidillo.com/>. Accedido el 12/8/2026.
 [^3]: TENSTAR ROBOT - Placa de desarrollo TENSTAR ROBOT ESP32 C3 SuperMini Disponible en: <https://tenstar.pro/robot-esp32-c3-supermini/>. Accedido el 24/8/2026.
 [^4]: GitHub - ArduinoJson. Disponible en: <https://github.com/bblanchon/ArduinoJson>. Accedido el 27/8/2026.
 [^5]: GitHub - Adafruit AHTX0 (AHT10 & AHT20). Disponible en: <https://github.com/adafruit/Adafruit_AHTX0>. Accedido el 27/8/2026.
