@@ -37,3 +37,6 @@ rele_manual = [False] * len(config.PIN_RELES)
 
 # Instante del último riego automático
 ultimo_riego = 0
+
+# Presencia de los nodos (último mensaje de esagrau/nodos/<id>/estado)
+nodos_online = {}

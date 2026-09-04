@@ -8,6 +8,12 @@ Sistema de medición ambiental y del suelo para huertas al aire libre, construid
 
 Un **nodo autónomo** (ESP32-C3 SuperMini) mide *in situ* temperatura y humedad ambientales, presión atmosférica, iluminación, índice UV, humedad y temperatura del suelo, y proximidad de tormentas. Envía sus lecturas en JSON por USB a una **estación base** (Raspberry Pi 1 Model B) que las muestra en una pantalla, acciona relés, emite avisos de voz y las publica en la nube (Ubidots).
 
+## Estado del proyecto
+
+- **Práctica Sistemas Digitales**: etiqueta
+  [`sistemas-digitales-final`](https://github.com/alexprovencio/estacion-agricola/tree/sistemas-digitales-final).
+- **Práctica Comunicaciones (en proceso)**: [memoria-comunicaciones.md](docs/memoria-comunicaciones.md).
+
 ## Estructura del repositorio
 
 ```

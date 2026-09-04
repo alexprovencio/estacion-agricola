@@ -2,7 +2,7 @@
  * @file
  * @brief Estación Agrícola - Nodo solar autónomo
  * @author Alejandro Provencio Sanz <aprovenci9@alumno.uned.es>
- * @date 2026-08-27
+ * @date 2026-09-03
  *
  * Práctica final de Sistemas Digitales para el Internet de las Cosas.
  *
@@ -19,6 +19,9 @@
  *   GUVA-S12SD ADC <- GPIO3  Índice UV, entrada analógica
  *   Higrómetro ADC <- GPIO4  Humedad de suelo, entrada analógica
  *   DS18B20 Data   <- GPIO6  Temperatura de suelo, OneWire, pull-up de 4,7 kΩ
+ *   INA226 IN+     <- CN3791 BAT+
+ *   INA226 IN-     <- 
+ *   INA226 VBS     <- 
  *   Para el AS3935 además:
  *      SI a 3V3
 *       MISO a GND
@@ -37,6 +40,11 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <SparkFun_AS3935.h>
+#include <WiFi.h>
+#include <AsyncMqttClient.h>
+#include <Ticker.h>
+#include "wifi_manager.h"
+#include "secrets.h"
 
 // Pines
 #define PIN_I2C_SDA        0
@@ -71,6 +79,12 @@ INA226 ina(INA226_ADDR);
 SparkFun_AS3935 rayos(AS3935_ADDR);
 OneWire oneWire(PIN_DS18B20);
 DallasTemperature ds18b20(&oneWire);
+
+WiFiManager wifiManager;
+AsyncMqttClient mqttClient;
+Ticker mqttReconnectTimer;
+// Último intento de conexión MQTT desde loop() (reintento periódico)
+unsigned long lastMqttAttempt = 0;
 
 // Interrupción del sensor de rayos
 volatile bool as3935_interrupt = false;
@@ -141,9 +155,60 @@ void leerRayos(JsonObject d) {
   }
 }
 
+void connectToMqtt() {
+  Serial.println("Conectando a MQTT...");
+  mqttClient.connect();
+}
+
+void WiFiEvent(WiFiEvent_t event) {
+  Serial.printf("[WiFi-event] %d\n", event);
+  switch(event) {
+    case ARDUINO_EVENT_WIFI_AP_START:
+      Serial.print("AP iniciado IP: ");
+      Serial.println(WiFi.softAPIP());
+      break;
+    case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+      Serial.println("Cliente conectado al AP");
+      connectToMqtt();
+      break;
+    case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+      Serial.println("Cliente desconectado del AP");
+      break;
+    case ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED:
+      Serial.println("IP asignada a cliente, conectando MQTT...");
+      connectToMqtt();
+      break;
+    default: break;
+  }
+}
+
+void onMqttConnect(bool sessionPresent) {
+  Serial.println("MQTT conectado");
+  mqttClient.publish(MQTT_TOPIC_ESTADO, 1, true, "{\"estado\":\"online\"}");
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  Serial.printf("MQTT desconectado %d\n", (int)reason);
+  if (WiFi.softAPgetStationNum() > 0 || WiFi.isConnected()) {
+    mqttReconnectTimer.once(2, connectToMqtt);
+  }
+}
+
 void setup() {
   // Consola de depuración por USB (Serial)
   Serial.begin(UART_BAUD);
+  delay(500);
+
+  WiFi.onEvent(WiFiEvent);
+  Serial.println("Iniciando WiFi...");
+  wifiManager.begin();
+
+  mqttClient.onConnect(onMqttConnect);
+  mqttClient.onDisconnect(onMqttDisconnect);
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCredentials(MQTT_USER, MQTT_PASS);
+  mqttClient.setClientId(MQTT_CLIENT_ID);
+  mqttClient.setWill(MQTT_TOPIC_ESTADO, 1, true, "{\"estado\":\"offline\"}");
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   pinMode(PIN_AS3935_IRQ, INPUT);
@@ -175,6 +240,15 @@ void setup() {
 }
 
 void loop() {
+  wifiManager.loop();
+
+  // Si hay clientes en el AP y MQTT sigue caído reintenta cada 5 s
+  if (!mqttClient.connected() && WiFi.softAPgetStationNum() > 0 &&
+      millis() - lastMqttAttempt > 5000) {
+    lastMqttAttempt = millis();
+    connectToMqtt();
+  }
+
   JsonDocument doc;
   doc["t"] = millis() / 1000;
   leerAmbientales(doc["amb"].to<JsonObject>());
@@ -182,7 +256,15 @@ void loop() {
   leerEnergia(doc["energia"].to<JsonObject>());
   leerRayos(doc["rayos"].to<JsonObject>());
 
-  serializeJson(doc, Serial);  // Lo sacamos por el USB
+  // USB para depuración
+  serializeJson(doc, Serial);
+  // MQTT a la estación base
+  char buffer[512];
+  serializeJson(doc, buffer, sizeof(buffer));
+  if (mqttClient.connected()) {
+    mqttClient.publish(MQTT_TOPIC_TELEMETRIA, 1, false, buffer);
+  }
+
   // Parpadeo del LED integrado para indicar envío
   digitalWrite(PIN_LED, LOW);
   Serial.println();

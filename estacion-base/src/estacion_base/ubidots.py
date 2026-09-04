@@ -2,34 +2,125 @@
 # -*- coding: utf-8 -*-
 """Estación Agrícola - Estación base - Integración con Ubidots.
 
-Integración con Ubidots.
+Cliente MQTT para comunicarse con Ubidots
 
 Autor: Alejandro Provencio Sanz <aprovenci9@alumno.uned.es>
-Fecha: 2026-09-01
+Fecha: 2026-09-04
 
-Práctica final de Sistemas Digitales para el Internet de las Cosas.   
+Práctica final de Comunicaciones Inalámbricas y Protocolos para el IoT.
 
-enviar(dato) sube las lecturas: sensores del nodo -> device nodo-1,
-estado de relés -> device estacion-base.
-
-aplicar_comandos() lee las variables rele_1..rele_4 del device
-estacion-base y devuelve los cambios.
+- Publica la telemetría en /v1.6/devices/nodo-1 y el estado de los
+  relés en /v1.6/devices/estacion-base (cada uno con su propio token).
+- Se suscribe a /v1.6/devices/estacion-base/rele_N/lv: al mover un
+  interruptor en el dashboard, Ubidots avisa al instante y se reenvía
+  la orden al tema local esagrau/base/control, que es donde la base
+  activa los relés. Sin polling.
 """
 
 import json
 import time
 
-import requests
+import paho.mqtt.client as mqtt
 
 from . import config
 from . import estado
+from . import mqtt_local
 
-_URL_NODO = f"https://industrial.api.ubidots.com/api/v1.6/devices/{config.UBI_DEVICE_NODO}"
-_URL_ESTACION = f"https://industrial.api.ubidots.com/api/v1.6/devices/{config.UBI_DEVICE_ESTACION}"
-_HEADERS_NODO = {"X-Auth-Token": config.UBI_TOKEN_NODO, "Content-Type": "application/json"}
-_HEADERS_ESTACION = {"X-Auth-Token": config.UBI_TOKEN_ESTACION, "Content-Type": "application/json"}
+# Habría que usar conexión segura...
+UBI_HOST = "industrial.api.ubidots.com"
+UBI_PORT = 1883
 
-_ultimo_comando = {}
+_cliente_nodo = None
+_cliente_estacion = None
+_ultimo_reintento = 0
+
+def _top_var(device, var):
+    return f"/v1.6/devices/{device}/{var}"
+
+def _on_connect_nodo(client, userdata, flags, reason_code, properties):
+    if reason_code.is_failure:
+        print(f"Ubidots MQTT (nodo): conexión rechazada ({reason_code})")
+    else:
+        print("Ubidots MQTT (nodo) conectado")
+
+def _on_connect_estacion(client, userdata, flags, reason_code, properties):
+    if reason_code.is_failure:
+        print(f"Ubidots MQTT (estacion): conexión rechazada ({reason_code})")
+    else:
+        print("Ubidots MQTT (estacion) conectado")
+        for n in range(len(config.PIN_RELES)):
+            client.subscribe((_top_var(config.UBI_DEVICE_ESTACION, f"rele_{n+1}") + "/lv", 1))
+
+
+def _on_disconnect(client, userdata, flags, reason_code, properties):
+    print(f"Ubidots MQTT desconectado ({reason_code}), reintentando...")
+
+
+def _on_rele(client, userdata, msg):
+    # /v1.6/devices/estacion-base/rele_N/lv -> {"rele_N": 0/1} al control local
+    var = msg.topic.rsplit("/", 2)[-2]  # "rele_N"
+    try:
+        valor = int(float(msg.payload.decode("utf-8", errors="replace").strip()))
+    except (ValueError, AttributeError):
+        return
+    if not var.startswith("rele_"):
+        return
+    try:
+        n = int(var.split("_")[1]) - 1
+    except (ValueError, IndexError):
+        return
+    if 0 <= n < len(config.PIN_RELES):
+        on = (valor == 1)
+        # Solo reenvía si cambia: evita rebotes de nuestros propios envíos
+        if estado.rele_manual[n] != on:
+            mqtt_local.publicar_control({f"rele_{n+1}": 1 if on else 0})
+
+def _nuevo_cliente(token, on_connect):
+    cliente = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    cliente.username_pw_set(token, "")
+    cliente.on_connect = on_connect
+    cliente.on_disconnect = _on_disconnect
+    cliente.reconnect_delay_set(min_delay=1, max_delay=30)
+    return cliente
+
+def iniciar():
+    """Crea los dos clientes Ubidots y los deja conectados en segundo plano."""
+    global _cliente_nodo, _cliente_estacion
+    if config.UBI_TOKEN_NODO:
+        _cliente_nodo = _nuevo_cliente(config.UBI_TOKEN_NODO, _on_connect_nodo)
+        try:
+            _cliente_nodo.connect(UBI_HOST, UBI_PORT, keepalive=60)
+        except Exception as e:
+            print(f"Ubidots MQTT (nodo): sin conexión ({e})")
+        _cliente_nodo.loop_start()
+    if config.UBI_TOKEN_ESTACION:
+        _cliente_estacion = _nuevo_cliente(config.UBI_TOKEN_ESTACION, _on_connect_estacion)
+        _cliente_estacion.on_message = _on_rele
+        try:
+            _cliente_estacion.connect(UBI_HOST, UBI_PORT, keepalive=60)
+        except Exception as e:
+            print(f"Ubidots MQTT (estacion): sin conexión ({e})")
+        _cliente_estacion.loop_start()
+
+def _asegurar(cliente):
+    """True si hay conexión, si no, reintenta como mucho cada 10 s."""
+    global _ultimo_reintento
+    if cliente is None:
+        return False
+    try:
+        if cliente.is_connected():
+            return True
+    except Exception:
+        return False
+    ahora = time.monotonic()
+    if ahora - _ultimo_reintento < 10:
+        return False
+    _ultimo_reintento = ahora
+    try:
+        cliente.reconnect()
+    except Exception as e:
+        print(f"Ubidots MQTT: sin conexión ({e})")
+    return False
 
 def _estado_rayos_num(estado):
     """Convierte el estado de rayos del nodo a un número.
@@ -68,77 +159,16 @@ def _payload_estacion():
     return d
 
 def enviar(dato):
-    """Sube datos del nodo y estación a sus respectivos devices."""
-    # Nodo
-    if config.UBI_TOKEN_NODO:
+    """Sube nodo y estación a Ubidots por MQTT."""
+    if config.UBI_TOKEN_NODO and _asegurar(_cliente_nodo):
         try:
-            r = requests.post(_URL_NODO, headers=_HEADERS_NODO,
-                              data=json.dumps(_payload_nodo(dato)), timeout=5)
-            if r.status_code not in (200, 201):
-                print(f"Ubidots nodo: {r.status_code} {r.text[:200]}")
-        except requests.RequestException as e:
-            print(f"Ubidots nodo sin conexión ({e})")
-    # Estación
-    if config.UBI_TOKEN_ESTACION:
+            _cliente_nodo.publish(f"/v1.6/devices/{config.UBI_DEVICE_NODO}",
+                                  json.dumps(_payload_nodo(dato)), qos=1)
+        except Exception as e:
+            print(f"Ubidots MQTT (nodo): no se pudo publicar ({e})")
+    if config.UBI_TOKEN_ESTACION and _asegurar(_cliente_estacion):
         try:
-            r = requests.post(_URL_ESTACION, headers=_HEADERS_ESTACION,
-                              data=json.dumps(_payload_estacion()), timeout=5)
-            if r.status_code not in (200, 201):
-                print(f"Ubidots estacion: {r.status_code} {r.text[:200]}")
-            else:
-                # Evita que el propio estado se reinterprete como comando
-                for n in range(len(config.PIN_RELES)):
-                    try:
-                        rr = requests.get(f"{_URL_ESTACION}/rele_{n+1}",
-                                          headers=_HEADERS_ESTACION, timeout=5)
-                        # Too many requests, mal
-                        if rr.status_code == 429:
-                            time.sleep(1)
-                            continue
-                        if rr.status_code == 200:
-                            ts = rr.json().get("last_value", {}).get("timestamp")
-                            if ts is not None:
-                                _ultimo_comando[n] = ts
-                    except (requests.RequestException, ValueError):
-                        pass
-                    time.sleep(0.2)
-        except requests.RequestException as e:
-            print(f"Ubidots estacion sin conexión ({e})")
-
-def aplicar_comandos():
-    """Lee rele_1..4 de estacion-base y devuelve [(n, on)] con cambios.
-
-    Hace un GET por variable (/devices/estacion-base/rele_N) porque el
-    endpoint del device no devuelve last_value por variable.
-    """
-    if not config.UBI_TOKEN_ESTACION:
-        return []
-    comandos = []
-    for n in range(len(config.PIN_RELES)):
-        var_label = f"rele_{n+1}"
-        url = f"{_URL_ESTACION}/{var_label}"
-        try:
-            r = requests.get(url, headers=_HEADERS_ESTACION, timeout=5)
-            # Too many requests, mal
-            if r.status_code == 429:
-                print("Ubidots: rate limit, esperando")
-                time.sleep(2)
-                continue
-            # Esto no debería ocurrir, pero...
-            if r.status_code == 404:
-                continue
-            data = r.json()
-            last = data.get("last_value")
-            if not last:
-                continue
-            ts = last.get("timestamp")
-            val = last.get("value")
-            if ts is None or _ultimo_comando.get(n) == ts:
-                continue
-            _ultimo_comando[n] = ts
-            comandos.append((n, int(val or 0) == 1))
-        except (requests.RequestException, ValueError) as e:
-            print(f"Ubidots {var_label}: {e}")
-            continue
-        time.sleep(0.25)  # no saturar la API, revisar si hay problemas
-    return comandos
+            _cliente_estacion.publish(f"/v1.6/devices/{config.UBI_DEVICE_ESTACION}",
+                                      json.dumps(_payload_estacion()), qos=1)
+        except Exception as e:
+            print(f"Ubidots MQTT (estacion): no se pudo publicar ({e})")

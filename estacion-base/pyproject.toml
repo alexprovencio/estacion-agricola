@@ -16,8 +16,8 @@ dependencies = [
     "luma.core",
     "adafruit-circuitpython-neopixel",
     "py-espeak-ng",
-    "requests",
     "python-dotenv",
+    "paho-mqtt>=2.0",
 ]
 
 [project.scripts]

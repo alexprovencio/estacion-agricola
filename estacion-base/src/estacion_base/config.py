@@ -53,9 +53,15 @@ LED_COLORS = {
 }
 LED_PRIORIDAD = ["rayo", "disturber", "riego", "seco", "ok"]
 
-# Enlace con el Nodo Autónomo
+# Enlace con el Nodo Autónomo para depuración
 PUERTO_NODO = os.getenv("PUERTO_NODO", "/dev/ttyACM0")
 BAUD = int(os.getenv("BAUD", "115200"))
+
+# Broker MQTT Mosquitto local
+MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USER = os.getenv("MQTT_USER", "estacion-base")
+MQTT_PASS = os.getenv("MQTT_PASS", "")
 
 # Ubidots
 # Cada dispositivo tiene su propio token y label. Se leen del .env 

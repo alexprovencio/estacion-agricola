@@ -2,27 +2,27 @@
 # -*- coding: utf-8 -*-
 """Estación Agrícola - Estación base - Nodo autónomo.
 
-Hilo de lectura del nodo autónomo por el puerto USB.
+Hilo de lectura del nodo autónomo por MQTT (broker local).
 
 Autor: Alejandro Provencio Sanz <aprovenci9@alumno.uned.es>
-Fecha: 2026-08-31
+Fecha: 2026-09-03
 
-Práctica final de Sistemas Digitales para el Internet de las Cosas.   
+Práctica final de Comunicaciones Inalámbricas y Protocolos para el IoT.
 
-Recibe las líneas JSON del ESP32, las guarda en el estado compartido, ejecuta
-los automatismos (riego, alerta de rayos), sube los datos a Ubidots (cada
-config.INTERVALO_CLOUD segundos) y aplica los comandos de relé recibidos 
-desde Ubidots. También guardamos los datos en un fichero de log.
+Recibe datos del nodo autónomo por el broker Mosquitto local, lo guarda en el
+estado compartido, ejecuta los automatismos (riego, alerta de rayos), sube
+los datos a Ubidots (cada config.INTERVALO_CLOUD segundos) y aplica los
+comandos de relé recibidos desde Ubidots y desde esagrau/base/control.
+También guardamos los datos en un fichero de log.
 """
 
 import json
 import threading
 import time
 
-import serial
-
 from . import config
 from . import estado
+from . import mqtt_local
 from . import perifericos
 from . import storage
 from . import ubidots
@@ -122,15 +122,16 @@ def _automatismos(dato):
     perifericos.actualizar_led(_estado_led(dato))
 
 def hilo_nube():
-    """Hilo aparte para la comunicación con Ubidots.
+    """Hilo aparte para la comunicación con Ubidots y el estado local.
     Inicialmente compartido con el otro pero bloqueaba comunicación con el nodo.
+    Los comandos de relé llegan por MQTT (callback), sin polling.
     """
     while estado.running:
         try:
             if estado.ultimo_dato:
                 ubidots.enviar(estado.ultimo_dato)
-            for n, on in ubidots.aplicar_comandos():
-                perifericos.set_rele(n, on)
+            # Estado real de relés para la estación auxiliar (con retain)
+            mqtt_local.publicar_estado()
         except Exception as e:
             print(f"Ubidots hilo: {e}")
         for _ in range(config.INTERVALO_CLOUD * 10):
@@ -139,30 +140,51 @@ def hilo_nube():
                 break
             time.sleep(0.1)
 
+def _al_recibir_telemetria(payload):
+    """Callback de esagrau/nodos/+/telemetria."""
+    dato = _leer_dato(payload)
+    if dato is None:
+        return
+    _automatismos(dato)
+    storage.guardar(dato)
+
+
+def _al_recibir_estado(nodo_id, payload):
+    """Callback de esagrau/nodos/+/estado: guarda la presencia del nodo."""
+    try:
+        info = json.loads(payload)
+    except json.JSONDecodeError:
+        info = {"estado": payload}
+    estado.nodos_online[nodo_id] = info
+    print(f"Nodo {nodo_id}: {info.get('estado', '?')}")
+
+
+def _al_recibir_control(payload):
+    """Callback de esagrau/base/control: {"rele_N": 0/1} -> conmuta relés."""
+    try:
+        orden = json.loads(payload)
+    except json.JSONDecodeError:
+        return
+    for n in range(len(config.PIN_RELES)):
+        # Aquí numerados desde 0, en la placa desde 1
+        clave = f"rele_{n+1}"
+        if clave in orden:
+            perifericos.set_rele(n, bool(orden[clave]))
+
+
 def hilo():
-    """Bucle principal que lee datos del nodo, ejecuta los automatismos, 
-    guarda los datos localmente y los envía a la nube.
+    """Bucle principal: recibe del broker local, ejecuta automatismos,
+    guarda localmente y sube a la nube. Lectura serie por USB  solo para 
+    depuración.
     """
 
     storage.inicializar()
     threading.Thread(target=hilo_nube, daemon=True).start()
+    mqtt_local.iniciar(
+        on_telemetria=_al_recibir_telemetria,
+        on_estado=_al_recibir_estado,
+        on_control=_al_recibir_control,
+    )
+    ubidots.iniciar()
     while estado.running:
-        try:
-            ser = serial.Serial(config.PUERTO_NODO, config.BAUD, timeout=2)
-            print(f"Conectado a {config.PUERTO_NODO}")
-            while estado.running:
-                linea = ser.readline().decode(errors="replace").strip()
-                if not linea:
-                    continue
-                dato = _leer_dato(linea)
-                if dato is None:
-                    continue
-
-                _automatismos(dato)
-                storage.guardar(dato)
-        except serial.SerialException as e:
-            print(f"Serie no disponible {e}, reintento en 3s")
-            time.sleep(3)
-        except Exception as e:
-            print(f"Error lectura: {e}")
-            time.sleep(1)
+        time.sleep(0.5)
