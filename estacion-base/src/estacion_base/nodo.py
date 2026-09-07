@@ -145,18 +145,41 @@ def _al_recibir_telemetria(payload):
     dato = _leer_dato(payload)
     if dato is None:
         return
+    # Si llega telemetría el nodo está vivo. Limpia un posible aviso previo
+    # (creo que esto sobra porque el online usa retain, por si acaso)
+    if estado.aviso_nodo:
+        estado.aviso_nodo = False
+        estado.nodo_id_caido = ""
+        perifericos.decir("Nodo conectado")
     _automatismos(dato)
     storage.guardar(dato)
 
 
 def _al_recibir_estado(nodo_id, payload):
-    """Callback de esagrau/nodos/+/estado: guarda la presencia del nodo."""
+    """Callback de esagrau/nodos/+/estado: guarda la presencia del nodo.
+
+    El nodo publica {"estado":"online"} con retain al conectar y el broker
+    publica {"estado":"offline"} como LWT si se cae. El offline dispara el
+    aviso en pantalla y sonoro, el online lo borra.
+    """
     try:
         info = json.loads(payload)
     except json.JSONDecodeError:
         info = {"estado": payload}
     estado.nodos_online[nodo_id] = info
     print(f"Nodo {nodo_id}: {info.get('estado', '?')}")
+    est = str(info.get("estado", "")).lower()
+    if est == "offline":
+        if not estado.aviso_nodo:
+            estado.aviso_nodo = True
+            estado.nodo_id_caido = nodo_id
+            perifericos.decir("Alerta, nodo desconectado")
+            perifericos.actualizar_led("rayo")
+    elif est == "online":
+        if estado.aviso_nodo:
+            perifericos.decir("Nodo conectado")
+        estado.aviso_nodo = False
+        estado.nodo_id_caido = ""
 
 
 def _al_recibir_control(payload):

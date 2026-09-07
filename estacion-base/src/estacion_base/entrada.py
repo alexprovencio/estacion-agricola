@@ -51,22 +51,33 @@ def _push():
         threading.Timer(d, lambda n=estado.rele_sel: perifericos.set_rele(n, False)).start()
         estado.estado_ui = estado.ESTADO_PRINCIPAL
 
+def _led_tras_silenciar():
+    """Restaura el LED tras silenciar la tormenta sin tapar un nodo caído."""
+    if estado.aviso_nodo:
+        perifericos.actualizar_led("rayo")
+    else:
+        perifericos.actualizar_led("ok")
+
+
 def _push_largo():
     """Pulsación larga del botón externo KEY0.
     Apaga todos los relés y alertas y vuelve a la pantalla principal.
+    El aviso de nodo caído NO SE BORRA con esto
     """
     perifericos.apagar_reles()
     estado.aviso_activo = False
-    perifericos.actualizar_led("ok")
+    _led_tras_silenciar()
     estado.estado_ui = estado.ESTADO_PRINCIPAL
+
 
 def _extra():
     """Silencia la alerta y apaga el relé que la activó
     También retrocede en el menú si se está dentro de él.
+    El aviso de nodo caído NO SE BORRA con esto
     """
     estado.aviso_activo = False
     perifericos.apagar_rele_alerta()
-    perifericos.actualizar_led("ok")
+    _led_tras_silenciar()
     if estado.estado_ui == estado.ESTADO_DURACION:
         estado.estado_ui = estado.ESTADO_RELES
     elif estado.estado_ui == estado.ESTADO_RELES:

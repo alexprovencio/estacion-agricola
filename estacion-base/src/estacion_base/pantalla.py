@@ -43,6 +43,16 @@ def _pinta_reles(draw):
                        fill="#00AA00" if on else "#333333")
         draw.text((x + 22, y + 4), f"R{i+1}", font=font_mid, fill="white")
 
+def _banner(draw, linea1, linea2, x1=50, x2=38):
+    """Banner rojo de aviso a pantalla completa inferior.
+
+    Para tormenta y para nodo caído.
+    """
+    draw.rectangle((0, 175, 320, 240), fill="red")
+    draw.text((x1, 180), linea1, font=font_big, fill="white")
+    draw.text((x2, 210), linea2, font=font_big, fill="white")
+
+
 def dibujar():
     """Dibuja la interfaz de usuario en la pantalla."""
     img = Image.new("RGB", display.size, "black")
@@ -80,10 +90,10 @@ def dibujar():
 
         _pinta_reles(draw)
 
-        if estado.aviso_activo:
-            draw.rectangle((0, 175, 320, 240), fill="red")
-            draw.text((50, 180), "¡ALERTA!", font=font_big, fill="white")
-            draw.text((38, 210), "¡TORMENTA!", font=font_big, fill="white")
+        if estado.aviso_nodo:
+            _banner(draw, "¡AVISO!", "¡NODO CAÍDO!", x1=50, x2=15)
+        elif estado.aviso_activo:
+            _banner(draw, "¡ALERTA!", "¡TORMENTA!")
 
     elif estado.estado_ui == estado.ESTADO_RELES:
         draw.text((10, 10), "Selecciona rele:", font=font_mid, fill="#88CCFF")

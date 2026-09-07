@@ -24,6 +24,12 @@ ultimo_dato = {}
 # Alerta de tormenta activa
 aviso_activo = False
 
+# Aviso de nodo caído (nivel: True mientras el nodo está offline según
+# esagrau/nodos/<id>/estado con LWT). Se muestra en pantalla con el mismo
+# banner rojo de la tormenta y no lo borran los botones, solo volver online.
+aviso_nodo = False
+nodo_id_caido = ""
+
 # Interfaz
 ESTADO_PRINCIPAL = "principal"  # Info del nodo
 ESTADO_RELES = "reles"          # Selección de relés

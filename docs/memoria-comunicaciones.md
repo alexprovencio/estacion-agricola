@@ -21,7 +21,13 @@ Hay que prestar atención a controlar los posibles errores de conexión que se p
 
 Paso a usar el broker MQTT de la estación base. Uso la librería <https://registry.platformio.org/libraries/marvinroger/AsyncMqttClient> para comunicarme con él. Uso el ejemplo disponible para el ESP32 para realizar mi implementación <https://registry.platformio.org/libraries/marvinroger/AsyncMqttClient/examples/FullyFeatured-ESP32/FullyFeatured-ESP32.ino>. Iba a usar los *timers* de *FreeRTOS* invocados expresamente para realizar reconexiones sin bloquear el *loop* principal y no tener que crear hilos tal como se hace en el ejemplo, pero me acabo de enterar de que el núcleo de ESP32 para Arduino ya corre de forma nativa sobre FreeRTOS <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/freertos.html>. Yo he usado FreeRTOS antes en microcontroladores STM32, por lo que la integración nativa en los ESP32 es una buena noticia, le sacaré partido de aquí en adelante.
 
+Inicialmente usé la conexión por USB que ya tenía en la práctica de Sistemas y comprobé que funcionaba bien, luego pasé a usar una conexión por WiFi entre la estación base y el nodo autónomo.
+
+### WiFi
+
 Para las pruebas con el WiFi uso la librería integrada en el núcleo del ESP32 <https://espressif-docs.readthedocs-hosted.com/projects/arduino-esp32/en/latest/api/wifi.html> y creo un AP en el nodo autónomo al que se conectará la estación base. OJO, no poner gateway o nos quedamos sin internet!
+
+Para empezar la Raspberry Pi da problemas de alimentación con el WiFi USB, lo tenemos que conectar con ella apagada y aun así hay veces que no lo reconoce o que no conecta si el nodo no estaba encendido antes, no es muy fiable. Cuando conecta funciona bien, se nota poco lag. No nos avisa por pantalla cuando el nodo se desconecta, lo cambio usando un dibujo similar al de tormenta y un aviso sonoro, uso el LWT del broker MQTT para detectar el estado desconectado del nodo autónomo. De lo mal que va el WiFi no puedo ni probar el nuevo sistema de reconexión de nodo caído, probarlo más adelante.
 
 
 
@@ -82,7 +88,7 @@ Hay muchas mejoras que se pueden implementar en el sistema, entre ellas destaco:
 - Realizar cajas impresas en 3D diseñadas a medida tanto para el nodo autónomo, separando los sensores que necesitan estar en el exterior con sus propias carcasas, como para la estación base.
 - Usar *mosfets*, como el Si2312, para apagar los sensores cuando no se utilizan en el nodo autónomo y así ahorrar energía.
 - Añadir al nodo autónomo un sensor de pluviometría para registrar el nivel de lluvia y un anemómetro y veleta para registrar la velocidad y dirección del viento.
-- Usar un ESP32-C6 reemplazando al ESP32-C3 empleado por ser la última versión de esta gama y tener mejor conectividad, aunque en principio nosotros no emplearemos ni WiFi ni Bluetooth para comunicarnos.
+- Usar un ESP32-C6 reemplazando al ESP32-C3 empleado por ser la última versión de esta gama y tener mejor conectividad, aunque en principio nosotros no emplearemos ni WiFi ni Bluetooth para comunicarnos sí que se podría hacer algo usando la conexión Matter (IEEExxxx) integrada.
 - Firmware del nodo autónomo actualizable vía *OTA*, uso de *secure boot*.
 - Usar mejores sensores de suelo ya que los empleados se corroen fácilmente como he comprobado.
 - Crear PCBs para todo el sistema, especialmente para el nodo autónomo, y así reducir su tamaño y coste.
