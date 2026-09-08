@@ -30,6 +30,10 @@ aviso_activo = False
 aviso_nodo = False
 nodo_id_caido = ""
 
+# Momento (time.monotonic) de la última telemetría recibida.
+# Para decidir desconectado sin LWT que no iba fino.
+ultimo_dato_mono = 0.0
+
 # Interfaz
 ESTADO_PRINCIPAL = "principal"  # Info del nodo
 ESTADO_RELES = "reles"          # Selección de relés

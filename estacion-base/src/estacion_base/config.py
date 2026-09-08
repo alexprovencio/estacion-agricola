@@ -106,6 +106,19 @@ DURACIONES = [5, 10, 30]
 FONT_BIG = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_MID = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
+# Identificación de la prueba.
+# Queda guardado en la cabecera del log de data/ y en cada registro.
+TEST_ID = os.getenv("TEST_ID", "")
+TEST_DISTANCIA_M = os.getenv("TEST_DISTANCIA_M", "")
+TEST_NOTA = os.getenv("TEST_NOTA", "")
+# Interfaz WiFi conectada al AP del nodo. Vacío = autodetectar (parece que funciona bien).
+WIFI_IFACE = os.getenv("WIFI_IFACE", "")
+
+# Detección de nodo desconectado.
+# No se avisa por el LWT, si no cuando no llega telemetría en NODO_TIMEOUT_S segundos.
+# Incrementado porque se desconectaba demasiado.
+NODO_TIMEOUT_S = int(os.getenv("NODO_TIMEOUT_S", "15"))
+
 # Persistencia local en disco
 # Directorio donde se almacenan los logs
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))

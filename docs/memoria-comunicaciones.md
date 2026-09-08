@@ -21,15 +21,96 @@ Hay que prestar atención a controlar los posibles errores de conexión que se p
 
 Paso a usar el broker MQTT de la estación base. Uso la librería <https://registry.platformio.org/libraries/marvinroger/AsyncMqttClient> para comunicarme con él. Uso el ejemplo disponible para el ESP32 para realizar mi implementación <https://registry.platformio.org/libraries/marvinroger/AsyncMqttClient/examples/FullyFeatured-ESP32/FullyFeatured-ESP32.ino>. Iba a usar los *timers* de *FreeRTOS* invocados expresamente para realizar reconexiones sin bloquear el *loop* principal y no tener que crear hilos tal como se hace en el ejemplo, pero me acabo de enterar de que el núcleo de ESP32 para Arduino ya corre de forma nativa sobre FreeRTOS <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/freertos.html>. Yo he usado FreeRTOS antes en microcontroladores STM32, por lo que la integración nativa en los ESP32 es una buena noticia, le sacaré partido de aquí en adelante.
 
-Inicialmente usé la conexión por USB que ya tenía en la práctica de Sistemas y comprobé que funcionaba bien, luego pasé a usar una conexión por WiFi entre la estación base y el nodo autónomo.
+### UART por USB
+
+Inicialmente usé la conexión por USB que ya tenía en la práctica de Sistemas y comprobé que funcionaba bien el cambio a MQTT tanto en la estación base como en Ubidots.
 
 ### WiFi
 
 Para las pruebas con el WiFi uso la librería integrada en el núcleo del ESP32 <https://espressif-docs.readthedocs-hosted.com/projects/arduino-esp32/en/latest/api/wifi.html> y creo un AP en el nodo autónomo al que se conectará la estación base. OJO, no poner gateway o nos quedamos sin internet!
 
-Para empezar la Raspberry Pi da problemas de alimentación con el WiFi USB, lo tenemos que conectar con ella apagada y aun así hay veces que no lo reconoce o que no conecta si el nodo no estaba encendido antes, no es muy fiable. Cuando conecta funciona bien, se nota poco lag. No nos avisa por pantalla cuando el nodo se desconecta, lo cambio usando un dibujo similar al de tormenta y un aviso sonoro, uso el LWT del broker MQTT para detectar el estado desconectado del nodo autónomo. De lo mal que va el WiFi no puedo ni probar el nuevo sistema de reconexión de nodo caído, probarlo más adelante.
+Para empezar la Raspberry Pi da problemas de alimentación con el WiFi USB, lo tenemos que conectar con ella apagada y aun así hay veces que no lo reconoce o que no conecta si el nodo no estaba encendido antes, no es muy fiable. Cuando conecta funciona bien, se nota poco lag. No nos avisa por pantalla cuando el nodo se desconecta, lo cambio usando un dibujo similar al de tormenta y un aviso sonoro, uso el LWT del broker MQTT para detectar el estado desconectado del nodo autónomo.
+
+Pongo un hub USB alimentando tanto a la RPi como al USB WiFi y a todo lo que conecte por USB. Para que conecte bien con el hub USB usar el puerto 2 y desenchufarlo y enchufarlo con la RPi funcionando.
+
+### ESP-NOW
 
 
+### Meshtastic
+
+
+### Comparación entre métodos de comunicación
+
+PDR es Packet Delivery Ratio, usamos `seq` con números secuenciales para saber si perdemos paquetes.
+Log modificado, añadida cabecera y más valores de conexión para las inalámbricas\
+Modificado script de lectura por USB para pruebas de rendimiento.
+Script de análisis de log hecho!
+
+Distancias pruebas:
+- a 30cm
+- a 10m sin obstáculos
+- a 10m con la puerta cerrada
+- USB conectado
+- Todo en un entorno con bastantes WiFis
+
+`Bus 001 Device 011: ID 0bda:8176 Realtek Semiconductor Corp. RTL8188CUS 802.11n WLAN Adapter`
+
+Todas las pruebas se ejecutan durante 10 minutos.
+
+| prueba | dist | n_rx | PDR% | perd | dt med/p95 s | RSSI med/min (n) | ping loss% | RTT min/avg/max/mdev ms | Vbat | I mA | APs | canales |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T0_0m | 0.3 | 115 | 100.0 | 0 | 5.17/5.19 | -39.0/-42 (n=115) | 0.0 | 1.665/3.222/61.454/3.531 | 3.81 | 182.25 | 25 | [1, 2, 4, 6, 10, 11] |
+| T1_10m_LOS | 10 | 116 | 100.0 | 0 | 5.17/5.21 | -69.8/-78 (n=116) | 0.0 | 4.067/15.569/93.774/10.148 | 3.8 | 183.94 | 11 | [1, 2, 4, 6, 10, 11] |
+| T2_10m_VLOS | 10 | 115 | 100.0 | 0 | 5.17/5.2 | -73.3/-76 (n=115) | 0.333333 | 2.577/7.344/212.359/11.513 | 3.75 | 186.22 | 11 | [1, 2, 4, 6, 10, 11] |
+| T5_usb | 0.3 | 116 | 100.0 | 0 | 5.17/5.18 | -/- (n=-) | - | -/-/-/- | - | - | - | - |
+
+Notas:
+- T0_0m: lado a lado
+- T1_10m_LOS: línea con visión directa
+- T2_10m_VLOS: línea con una puerta cerrada en medio
+- T5_usb: usb directo
+
+#### USB
+
+Usamos un script y no el programa principal de la estación base, porque este último ya usa MQTT, para probar el rendimiento de la conexión usando USB.
+
+`TEST_ID=T5_usb TEST_DISTANCIA_M=0.3 TEST_NOTA="usb directo" python3 scripts/lector_estacion.py /dev/ttyACM0 --log`
+
+##### WiFi
+
+Saturación de la WiFi:
+`sudo iw dev wlan0 scan | grep -E "SSID|signal|primary channel"`
+
+Estado del enlace:
+`sudo iw dev wlan0 link`
+
+Ejecución de cada prueba:
+`udo TEST_ID=Tx_xm_x TEST_DISTANCIA_M=x TEST_NOTA="..." ~/venvs/estacion/bin/python -m estacion_base`
+
+A la vez en otra cosola hacemos:
+`ping -c 600 -i 1 192.168.4.1 > data/ping-T2_10m_VLOS.txt`
+
+Prueba T0_0m:
+```bash
+        signal: -40 dBm
+        rx bitrate: 121.5 MBit/s MCS 6 40MHz
+        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
+```
+
+Prueba T1_10m_LOS:
+```bash
+        signal: -70 dBm
+        rx bitrate: 6.0 MBit/s
+        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
+```
+
+Prueba T1_10m_VLOS:
+Casi no puedo conectar, hubo que cambiar el timeout para detectar el nodo desconectado, luego misteriosamente fue bien!
+```bash
+        signal: -74 dBm
+        rx bitrate: 1.0 MBit/s
+        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
+```
 
 ## 2.1 Alimentación
 
@@ -39,6 +120,7 @@ Para empezar la Raspberry Pi da problemas de alimentación con el WiFi USB, lo t
 - Batería: batería de litio con protección integrada.
 - Hay que usar un regulador de voltaje para alimentar directamente el ESP32, lo puedo hacer a 3,3V <https://zbotic.in/solar-power-for-esp32-mppt-and-battery-charging-circuit/>
 
+Al hacer pruebas veo que el INA226 no me devuelve datos de corriente, no había iniciado bien la librería con el registro de calibración, lo soluciono, tengo que darle la resistencia del shunt que en mi módulo es 0.1 Ω
 
 # 3. Estación base
 
@@ -85,6 +167,7 @@ Hay muchas mejoras que se pueden implementar en el sistema, entre ellas destaco:
 
 - Emplear MQTT con *Ubidots*?
 - Hacer el sistema realmente escalable para que una sola estación base pueda soportar múltiples nodos autónomos que se conectarían fácilmente sin tocar el código? si no es fácil de implementar lo dejamos
+- Modificar el programa de la estación base para que sea instalable como un servicio para que se inicie automáticamente cada vez que lo alimentemos y además podamos monitorizar su estado. Igualmente, cambiar la ubicación del log.
 - Realizar cajas impresas en 3D diseñadas a medida tanto para el nodo autónomo, separando los sensores que necesitan estar en el exterior con sus propias carcasas, como para la estación base.
 - Usar *mosfets*, como el Si2312, para apagar los sensores cuando no se utilizan en el nodo autónomo y así ahorrar energía.
 - Añadir al nodo autónomo un sensor de pluviometría para registrar el nivel de lluvia y un anemómetro y veleta para registrar la velocidad y dirección del viento.

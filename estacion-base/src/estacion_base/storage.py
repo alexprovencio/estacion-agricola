@@ -45,11 +45,17 @@ def inicializar():
     _fichero = _nombre_fichero()
     _buffer = []
     _ultimo_flush = time.time()
-    # Cabecera con metadatos del arranque
+    # Cabecera con metadatos del arranque + identificación de la prueba
+    # Cada prueba = un arranque = un fichero. Usar con:
+    #    sudo TEST_ID=T1_10m_VLOS TEST_DISTANCIA_M=10 TEST_NOTA="VLOS" 
+    #       ~/venvs/estacion/bin/python -m estacion_base
     cabecera = {
         "inicio": datetime.now(timezone.utc).isoformat(),
         "device_nodo": config.UBI_DEVICE_NODO,
         "device_estacion": config.UBI_DEVICE_ESTACION,
+        "test_id": config.TEST_ID,
+        "test_distancia_m": config.TEST_DISTANCIA_M,
+        "test_nota": config.TEST_NOTA,
     }
     _buffer.append(cabecera)
     _volcar(force=True)
@@ -75,14 +81,21 @@ def _volcar(force=False):
     _buffer = []
     _ultimo_flush = ahora
 
-def guardar(dato):
-    """Añade una lectura al buffer. No escribe a disco hasta INTERVALO_DISCO."""
+def guardar(dato, extra=None):
+    """Añade una lectura al buffer. No escribe a disco hasta INTERVALO_DISCO.
+
+    `dato` ya con t_rx_* y seq, `extra` permite añadir la muestra del enlace WiFi 
+    y la presencia MQTT.
+    """
     from . import estado
 
     registro = {
         "ts": datetime.now(timezone.utc).isoformat(),
+        "t_mono": time.monotonic(),
         "dato": dato,
         "reles": list(estado.rele_manual),
+        "enlace": (extra or {}).get("enlace", {}),
+        "presencia": dict(estado.nodos_online),
     }
     _buffer.append(registro)
     _volcar(force=False)

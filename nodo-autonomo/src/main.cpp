@@ -72,6 +72,11 @@
 #define DISTURBER_INT      0x04
 #define RUIDO_INT          0x01
 
+// INA226: ajusta al valor real del shunt del módulo y la corriente 
+// máxima que puede medir sin saturarse (sacado de aliexpress).
+#define INA_SHUNT_OHM     0.1
+#define INA_MAX_CURRENT_A 0.8
+
 Adafruit_AHTX0 aht;
 Adafruit_BMP280 bmp;
 Adafruit_VEML7700 veml;
@@ -85,6 +90,8 @@ AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
 // Último intento de conexión MQTT desde loop() (reintento periódico)
 unsigned long lastMqttAttempt = 0;
+// Contador incremental para medir pérdida de paquetes
+uint32_t seq = 0;
 
 // Interrupción del sensor de rayos
 volatile bool as3935_interrupt = false;
@@ -117,7 +124,6 @@ void leerSuelo(JsonObject d) {
 }
 
 // Módulo de energía INA226: tensión, corriente y potencia de la batería
-// No usado de momento porque no tenemos batería PROBARLO
 void leerEnergia(JsonObject d) {
   d["v_bat"] = ina.getBusVoltage();
   d["i_ma"]  = ina.getCurrent_mA();
@@ -222,6 +228,8 @@ void setup() {
   bmp.setSampling(Adafruit_BMP280::MODE_FORCED);
   veml.begin();
   ina.begin();
+  // Calibración del INA226 NECESARIA
+  ina.setMaxCurrentShunt(INA_MAX_CURRENT_A, INA_SHUNT_OHM);
   ds18b20.begin();
 
   if (rayos.begin()) {
@@ -250,6 +258,7 @@ void loop() {
   }
 
   JsonDocument doc;
+  doc["seq"] = seq++;
   doc["t"] = millis() / 1000;
   leerAmbientales(doc["amb"].to<JsonObject>());
   leerSuelo(doc["suelo"].to<JsonObject>());
@@ -259,7 +268,7 @@ void loop() {
   // USB para depuración
   serializeJson(doc, Serial);
   // MQTT a la estación base
-  char buffer[512];
+  char buffer[600]; // Controlar tamaño
   serializeJson(doc, buffer, sizeof(buffer));
   if (mqttClient.connected()) {
     mqttClient.publish(MQTT_TOPIC_TELEMETRIA, 1, false, buffer);

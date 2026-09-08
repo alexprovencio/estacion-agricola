@@ -21,6 +21,7 @@ import threading
 import time
 
 from . import config
+from . import enlace
 from . import estado
 from . import mqtt_local
 from . import perifericos
@@ -141,19 +142,32 @@ def hilo_nube():
             time.sleep(0.1)
 
 def _al_recibir_telemetria(payload):
-    """Callback de esagrau/nodos/+/telemetria."""
+    """Callback de esagrau/nodos/+/telemetria.
+
+    Marca t_rx nada más llegar (reloj de la Pi) y adjunta una muestra del enlace 
+    WiFi (RSSI/bitrate vía `iw`) para las pruebas de cobertura. Todo guardado en 
+    el log de data/*.json.
+    """
+    t_rx_mono = time.monotonic() # Tiempo desde arranque de la Pi
+    t_rx_wall = time.time()      # Hora real
     dato = _leer_dato(payload)
     if dato is None:
         return
-    # Si llega telemetría el nodo está vivo. Limpia un posible aviso previo
-    # (creo que esto sobra porque el online usa retain, por si acaso)
+    dato["t_rx_mono"] = t_rx_mono
+    dato["t_rx_wall"] = t_rx_wall
+    # Marca el último momento con datos: base de la detección de desconexión.
+    estado.ultimo_dato_mono = t_rx_mono
+    # Si llega telemetría el nodo está vivo: limpia el aviso de nodo caído.
     if estado.aviso_nodo:
         estado.aviso_nodo = False
         estado.nodo_id_caido = ""
         perifericos.decir("Nodo conectado")
     _automatismos(dato)
-    storage.guardar(dato)
-
+    try:
+        muestra_enlace = enlace.muestra()
+    except Exception:
+        muestra_enlace = {}
+    storage.guardar(dato, extra={"enlace": muestra_enlace})
 
 def _al_recibir_estado(nodo_id, payload):
     """Callback de esagrau/nodos/+/estado: guarda la presencia del nodo.
@@ -170,17 +184,29 @@ def _al_recibir_estado(nodo_id, payload):
     print(f"Nodo {nodo_id}: {info.get('estado', '?')}")
     est = str(info.get("estado", "")).lower()
     if est == "offline":
-        if not estado.aviso_nodo:
-            estado.aviso_nodo = True
-            estado.nodo_id_caido = nodo_id
-            perifericos.decir("Alerta, nodo desconectado")
-            perifericos.actualizar_led("rayo")
+        # No se avisa aquí
+        # El aviso lo decide _comprobar_offline() por tiempo sin telemetría.
+        pass
     elif est == "online":
         if estado.aviso_nodo:
             perifericos.decir("Nodo conectado")
         estado.aviso_nodo = False
         estado.nodo_id_caido = ""
 
+def _comprobar_offline():
+    """Considera el nodo desconectado si no llega telemetría en NODO_TIMEOUT_S.
+
+    No usamos el LWT de MQTT porque no era fiable.
+    No avisa si aún no ha llegado ningún dato.
+    """
+    if estado.ultimo_dato_mono == 0.0:
+        return
+    if time.monotonic() - estado.ultimo_dato_mono > config.NODO_TIMEOUT_S:
+        if not estado.aviso_nodo:
+            estado.aviso_nodo = True
+            estado.nodo_id_caido = "nodo-1"
+            perifericos.decir("Alerta, nodo desconectado")
+            perifericos.actualizar_led("rayo")
 
 def _al_recibir_control(payload):
     """Callback de esagrau/base/control: {"rele_N": 0/1} -> conmuta relés."""
@@ -193,7 +219,6 @@ def _al_recibir_control(payload):
         clave = f"rele_{n+1}"
         if clave in orden:
             perifericos.set_rele(n, bool(orden[clave]))
-
 
 def hilo():
     """Bucle principal: recibe del broker local, ejecuta automatismos,
@@ -210,4 +235,5 @@ def hilo():
     )
     ubidots.iniciar()
     while estado.running:
+        _comprobar_offline()
         time.sleep(0.5)

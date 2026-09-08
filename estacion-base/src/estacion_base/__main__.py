@@ -10,6 +10,8 @@ Práctica final de Sistemas Digitales para el Internet de las Cosas.
 Arranca los hilos de lectura del nodo y de entrada (encoder/botones) 
 y dibuja la pantalla en bucle. Al salir apaga relés, LED y pantalla y 
 limpia los GPIO.
+
+sudo TEST_ID=T1_10m_VLOS TEST_DISTANCIA_M=10 TEST_NOTA="VLOS" ~/venvs/estacion/bin/python -m estacion_base
 """
 
 import signal
@@ -23,7 +25,6 @@ from . import entrada
 from . import pantalla
 from . import perifericos
 from . import storage
-
 
 def cleanup(signum=None, frame=None):
     """Apaga todo, limpia GPIOS y guarda el log actual."""
@@ -39,7 +40,6 @@ def cleanup(signum=None, frame=None):
         pass
     perifericos.GPIO.cleanup()
     sys.exit(0)
-
 
 def main():
     signal.signal(signal.SIGINT, cleanup)   # Ctrl+C
