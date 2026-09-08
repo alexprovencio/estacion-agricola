@@ -4,24 +4,32 @@
  * @author Alejandro Provencio Sanz <aprovenci9@alumno.uned.es>
  * @date 2026-09-03
  *
- * Práctica final de Sistemas Digitales para el Internet de las Cosas.
+ * Práctica final de Comunicaciones Inalámbricas y Protocolos para el IoT.
  *
  * Lee todos los sensores del nodo y envía las lecturas por el USB
  * en formato JSON para que la estación base las procese.
  *
  * @details
- * Mapa de conexiones (ESP32-C3 Supermini):
+ * Mapa de conexiones (ESP32-C3 Supermini y módulos):
  * @code
- *   Todos los módulos van alimentados a 3V3 y con GND común
- *   I2C SDA        <- GPIO0  AHT20+BMP280, VEML7700, INA226 y AS3935
- *   I2C SCL        <- GPIO1  AHT20+BMP280, VEML7700, INA226 y AS3935
- *   AS3935 IRQ     <- GPIO5  Interrupción de detección de rayos
- *   GUVA-S12SD ADC <- GPIO3  Índice UV, entrada analógica
- *   Higrómetro ADC <- GPIO4  Humedad de suelo, entrada analógica
- *   DS18B20 Data   <- GPIO6  Temperatura de suelo, OneWire, pull-up de 4,7 kΩ
- *   INA226 IN+     <- CN3791 BAT+
- *   INA226 IN-     <- 
- *   INA226 VBS     <- 
+ *   Todos los módulos van alimentados a 3V3 y con GND común para todo.
+ *   I2C SDA          <- GPIO0  AHT20+BMP280, VEML7700, INA226 y AS3935
+ *   I2C SCL          <- GPIO1  AHT20+BMP280, VEML7700, INA226 y AS3935
+ *   AS3935 IRQ       <- GPIO5  Interrupción de detección de rayos
+ *   GUVA-S12SD ADC   <- GPIO3  Índice UV, entrada analógica
+ *   Higrómetro ADC   <- GPIO4  Humedad de suelo, entrada analógica
+ *   DS18B20 Data     <- GPIO6  Temperatura de suelo, OneWire, pull-up de 4,7 kΩ
+ *   INA226 IN+       <- CN3791 BAT+
+ *   INA226 IN-       <- MH-CD41 BAT+
+ *   INA226 VBS       <- CN3791 BAT+
+ *   MH-CD41 BAT+     <- CN3791 BAT-
+ *   MH-CD41 BAT-     <- GND
+ *   MH-CD41 OUT+     <- ESP32-C3 5V
+ *   MH-CD41 OUT-     <- GND
+ *   CN3791 BAT+      <- +Batería de 3,7V y MH-CD41 BAT+
+ *   CN3791 BAT-      <- -Batería de 3,7V y GND
+ *   CN3791 SOLAR IN+ <- + Panel Solar hasta 6V
+ *   CN3791 SOLAR IN- <- - Panel Solar hasta 6V
  *   Para el AS3935 además:
  *      SI a 3V3
 *       MISO a GND
@@ -41,9 +49,17 @@
 #include <DallasTemperature.h>
 #include <SparkFun_AS3935.h>
 #include <WiFi.h>
+#include "esp_mac.h"
+
+#if defined(TRANSPORTE_WIFI)
 #include <AsyncMqttClient.h>
 #include <Ticker.h>
 #include "wifi_manager.h"
+#endif
+#if defined(TRANSPORTE_ESP_NOW)
+#include <esp_now.h>
+#include <esp_wifi.h>
+#endif
 #include "secrets.h"
 
 // Pines
@@ -85,22 +101,30 @@ SparkFun_AS3935 rayos(AS3935_ADDR);
 OneWire oneWire(PIN_DS18B20);
 DallasTemperature ds18b20(&oneWire);
 
+// Interrupción del sensor de rayos
+volatile bool as3935_interrupt = false;
+
+void IRAM_ATTR onAs3935() {
+  as3935_interrupt = true;
+}
+
+// Imprime la MAC real del dispositivo (leída de efuse, no depende del estado WiFi).
+void printMac(const char* label) {
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  Serial.printf("%s: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                label, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+#if defined(TRANSPORTE_WIFI)
 WiFiManager wifiManager;
 AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
 // Último intento de conexión MQTT desde loop() (reintento periódico)
 unsigned long lastMqttAttempt = 0;
+#endif
 // Contador incremental para medir pérdida de paquetes
 uint32_t seq = 0;
-
-// Interrupción del sensor de rayos
-volatile bool as3935_interrupt = false;
-volatile uint32_t as3935_pulsos = 0;
-
-void IRAM_ATTR onAs3935() {
-  as3935_interrupt = true;
-  as3935_pulsos++;
-}
 
 // Sensores ambientales: temperatura, humedad, presión, luz y UV (analógico)
 void leerAmbientales(JsonObject d) {
@@ -161,6 +185,7 @@ void leerRayos(JsonObject d) {
   }
 }
 
+#if defined(TRANSPORTE_WIFI)
 void connectToMqtt() {
   Serial.println("Conectando a MQTT...");
   mqttClient.connect();
@@ -199,12 +224,36 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     mqttReconnectTimer.once(2, connectToMqtt);
   }
 }
+#elif defined(TRANSPORTE_ESP_NOW)
+esp_now_peer_info_t peerInfo = {};
+
+void iniciarEspNow() {
+  WiFi.mode(WIFI_STA);
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error: no se pudo iniciar ESP-NOW");
+    return;
+  }
+  // Nodo y puente deben estar en el mismo canal.
+  esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  memcpy(peerInfo.peer_addr, BRIDGE_MAC, 6);
+  peerInfo.channel = ESP_NOW_CHANNEL;
+  peerInfo.ifidx = WIFI_IF_STA;
+  peerInfo.encrypt = false;
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Error: añadiendo peer (puente)");
+  }
+}
+#endif
 
 void setup() {
   // Consola de depuración por USB (Serial)
   Serial.begin(UART_BAUD);
   delay(500);
 
+  // MAC del nodo: cópiala a secrets.h del puente (NODE_MAC)
+  printMac("MAC del nodo");
+
+#if defined(TRANSPORTE_WIFI)
   WiFi.onEvent(WiFiEvent);
   Serial.println("Iniciando WiFi...");
   wifiManager.begin();
@@ -215,6 +264,9 @@ void setup() {
   mqttClient.setCredentials(MQTT_USER, MQTT_PASS);
   mqttClient.setClientId(MQTT_CLIENT_ID);
   mqttClient.setWill(MQTT_TOPIC_ESTADO, 1, true, "{\"estado\":\"offline\"}");
+#elif defined(TRANSPORTE_ESP_NOW)
+  iniciarEspNow();
+#endif
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   pinMode(PIN_AS3935_IRQ, INPUT);
@@ -248,6 +300,7 @@ void setup() {
 }
 
 void loop() {
+#if defined(TRANSPORTE_WIFI)
   wifiManager.loop();
 
   // Si hay clientes en el AP y MQTT sigue caído reintenta cada 5 s
@@ -256,6 +309,7 @@ void loop() {
     lastMqttAttempt = millis();
     connectToMqtt();
   }
+#endif
 
   JsonDocument doc;
   doc["seq"] = seq++;
@@ -265,18 +319,34 @@ void loop() {
   leerEnergia(doc["energia"].to<JsonObject>());
   leerRayos(doc["rayos"].to<JsonObject>());
 
-  // USB para depuración
+#if defined(TRANSPORTE_WIFI)
+  // Depuración por USB + MQTT a la estación base
   serializeJson(doc, Serial);
-  // MQTT a la estación base
-  char buffer[600]; // Controlar tamaño
+  Serial.println();
+  char buffer[600];
   serializeJson(doc, buffer, sizeof(buffer));
   if (mqttClient.connected()) {
     mqttClient.publish(MQTT_TOPIC_TELEMETRIA, 1, false, buffer);
   }
+#elif defined(TRANSPORTE_USB)
+  // Enlace directo a la base: wrapper {"enlace":{"origen":"usb"},"dato":...}
+  char inner[600];
+  size_t n = serializeJson(doc, inner, sizeof(inner));
+  Serial.printf("{\"enlace\":{\"origen\":\"usb\"},\"dato\":");
+  Serial.write(inner, n);
+  Serial.println("}");
+#elif defined(TRANSPORTE_ESP_NOW)
+  // Envío por ESP-NOW al puente (el puente añade el enlace y el RSSI)
+  char buffer[600];
+  size_t n = serializeJson(doc, buffer, sizeof(buffer));
+  esp_now_send(BRIDGE_MAC, (const uint8_t*)buffer, n);
+  // Depuración por USB
+  serializeJson(doc, Serial);
+  Serial.println();
+#endif
 
   // Parpadeo del LED integrado para indicar envío
   digitalWrite(PIN_LED, LOW);
-  Serial.println();
   delay(80);
   digitalWrite(PIN_LED, HIGH);
 

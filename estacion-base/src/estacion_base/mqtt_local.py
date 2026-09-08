@@ -113,3 +113,18 @@ def publicar_estado():
                          qos=0, retain=True)
     except Exception as e:
         print(f"MQTT local: no se pudo publicar estado ({e})")
+
+
+def publicar_telemetria(msg, nodo_id="nodo-1", qos=1):
+    """Publica telemetría de un nodo en el broker local.
+
+    Usado por inyectores de enlace (gateway_serial para USB/ESP-NOW/
+    Meshtastic).
+    """
+    if _cliente is None:
+        return
+    try:
+        _cliente.publish(f"esagrau/nodos/{nodo_id}/telemetria",
+                         json.dumps(msg), qos=qos)
+    except Exception as e:
+        print(f"MQTT local: no se pudo publicar telemetria ({e})")

@@ -57,6 +57,12 @@ LED_PRIORIDAD = ["rayo", "disturber", "riego", "seco", "ok"]
 PUERTO_NODO = os.getenv("PUERTO_NODO", "/dev/ttyACM0")
 BAUD = int(os.getenv("BAUD", "115200"))
 
+# Enlace de entrada del nodo: "mqtt" (WiFi-MQTT, actual) o "serial"
+# USB directo / ESP-NOW / Meshtastic, vía inyector gateway_serial.
+ENLACE_NODO = os.getenv("ENLACE_NODO", "mqtt")
+# Puerto del inyector serie (USB del nodo o del puente ESP-NOW)
+PUERTO_SERIAL = os.getenv("PUERTO_SERIAL", os.getenv("PUERTO_NODO", "/dev/ttyACM0"))
+
 # Broker MQTT Mosquitto local
 MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))

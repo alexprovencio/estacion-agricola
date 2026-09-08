@@ -35,82 +35,33 @@ Pongo un hub USB alimentando tanto a la RPi como al USB WiFi y a todo lo que con
 
 ### ESP-NOW
 
+Necesitamos que los paquetes sean de como mucho 250 bytes en la v1.0, pero admite 1470 bytes en la v2.0 <https://docs.espressif.com/projects/esp-faq/en/latest/application-solution/esp-now.html> y <https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-reference/network/esp_now.html>, <https://randomnerdtutorials.com/esp-now-esp32-arduino-ide/>
+
+Incluidas por defecto, ver versión:
+`#include <esp_now.h>`
+
+Usamos el core Arduino del ESP32 ojo <https://github.com/espressif/arduino-esp32>, la versión por defecto es la v3.0 (ESP-IDF 5.1 o mayor con soporte v2.0 ESP-NOW) donde cambian algunas cosas, tenerlo en cuenta para los ejemplos. NO LA TRAE POR DEFECTO PLATFORMIO! <https://github.com/platformio/platform-espressif32/issues/1225#issuecomment-4216264938> hay soporte de la comunidad si lo necesitamos <https://github.com/pioarduino/platform-espressif32>:
+
+Migro a piarduino deshabilitando PlatformIO, instalando la extensión y usando:
+
+```
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/stable/platform-espressif32.zip
+framework = arduino
+```
+
+ESP-NOW no es un protocolo IP, es enlace punto a punto connectionless ejemplos para el framework arduino <https://espressif-docs.readthedocs-hosted.com/projects/arduino-esp32/en/latest/api/espnow.html>, por lo que necesitamos un gateway que traduzca a IP para mandar la info al broker. Podemos usar el propio puente (ESP32-C3 idéntico al del nodo) mediante WiFi o mejor, la propia estación y así nos vale para republicar lo que recibamos en el futuro del Faketec con enlace usando Meshtastic. Usamos modo one-way communication <https://docs.arduino.cc/tutorials/nano-esp32/esp-now/>, 
+
+![alt text](image.png)
+
+Creo un inyector para que procese lo que llega por el puerto serie (USB/ESP-NOW/Meshtastic) y lo mande al broker, luego se procesa casi igual, la información de enlace para el WiFi la calculamos nosotros, la de serie nos llega del puente.
+
+Creo un firmware puente para el ESP32-C3 conectado a la RPi por USB.
+
+Como ahora no hay sesión MQTT para los nodos que usan el gateway no usamos estado para esos nodos ni LWT, aunque ya no lo usábamos antes porque era demasiado exigente.
+
+Funciona! después de sacar las MACs de cada ESP32, es rapidísimo! al ser un protocolo P2P sin conexión es inmmediato. La reconexión es inmediata!
 
 ### Meshtastic
-
-
-### Comparación entre métodos de comunicación
-
-PDR es Packet Delivery Ratio, usamos `seq` con números secuenciales para saber si perdemos paquetes.
-Log modificado, añadida cabecera y más valores de conexión para las inalámbricas\
-Modificado script de lectura por USB para pruebas de rendimiento.
-Script de análisis de log hecho!
-
-Distancias pruebas:
-- a 30cm
-- a 10m sin obstáculos
-- a 10m con la puerta cerrada
-- USB conectado
-- Todo en un entorno con bastantes WiFis
-
-`Bus 001 Device 011: ID 0bda:8176 Realtek Semiconductor Corp. RTL8188CUS 802.11n WLAN Adapter`
-
-Todas las pruebas se ejecutan durante 10 minutos.
-
-| prueba | dist | n_rx | PDR% | perd | dt med/p95 s | RSSI med/min (n) | ping loss% | RTT min/avg/max/mdev ms | Vbat | I mA | APs | canales |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T0_0m | 0.3 | 115 | 100.0 | 0 | 5.17/5.19 | -39.0/-42 (n=115) | 0.0 | 1.665/3.222/61.454/3.531 | 3.81 | 182.25 | 25 | [1, 2, 4, 6, 10, 11] |
-| T1_10m_LOS | 10 | 116 | 100.0 | 0 | 5.17/5.21 | -69.8/-78 (n=116) | 0.0 | 4.067/15.569/93.774/10.148 | 3.8 | 183.94 | 11 | [1, 2, 4, 6, 10, 11] |
-| T2_10m_VLOS | 10 | 115 | 100.0 | 0 | 5.17/5.2 | -73.3/-76 (n=115) | 0.333333 | 2.577/7.344/212.359/11.513 | 3.75 | 186.22 | 11 | [1, 2, 4, 6, 10, 11] |
-| T5_usb | 0.3 | 116 | 100.0 | 0 | 5.17/5.18 | -/- (n=-) | - | -/-/-/- | - | - | - | - |
-
-Notas:
-- T0_0m: lado a lado
-- T1_10m_LOS: línea con visión directa
-- T2_10m_VLOS: línea con una puerta cerrada en medio
-- T5_usb: usb directo
-
-#### USB
-
-Usamos un script y no el programa principal de la estación base, porque este último ya usa MQTT, para probar el rendimiento de la conexión usando USB.
-
-`TEST_ID=T5_usb TEST_DISTANCIA_M=0.3 TEST_NOTA="usb directo" python3 scripts/lector_estacion.py /dev/ttyACM0 --log`
-
-##### WiFi
-
-Saturación de la WiFi:
-`sudo iw dev wlan0 scan | grep -E "SSID|signal|primary channel"`
-
-Estado del enlace:
-`sudo iw dev wlan0 link`
-
-Ejecución de cada prueba:
-`udo TEST_ID=Tx_xm_x TEST_DISTANCIA_M=x TEST_NOTA="..." ~/venvs/estacion/bin/python -m estacion_base`
-
-A la vez en otra cosola hacemos:
-`ping -c 600 -i 1 192.168.4.1 > data/ping-T2_10m_VLOS.txt`
-
-Prueba T0_0m:
-```bash
-        signal: -40 dBm
-        rx bitrate: 121.5 MBit/s MCS 6 40MHz
-        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
-```
-
-Prueba T1_10m_LOS:
-```bash
-        signal: -70 dBm
-        rx bitrate: 6.0 MBit/s
-        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
-```
-
-Prueba T1_10m_VLOS:
-Casi no puedo conectar, hubo que cambiar el timeout para detectar el nodo desconectado, luego misteriosamente fue bien!
-```bash
-        signal: -74 dBm
-        rx bitrate: 1.0 MBit/s
-        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
-```
 
 ## 2.1 Alimentación
 
@@ -157,15 +108,102 @@ Uso la versión 2.x de la librería `paho-mqtt` <https://pypi.org/project/paho-m
 
 Usar MQTT, mandar cambios de relés al momento, también las alertas de rayos
 
-# 4. Estación auxiliar
+# 4. Comparación entre métodos de comunicación
+
+PDR es Packet Delivery Ratio, usamos `seq` con números secuenciales para saber si perdemos paquetes.
+Log modificado, añadida cabecera y más valores de conexión para las inalámbricas\
+Modificado script de lectura por USB para pruebas de rendimiento.
+Script de análisis de log hecho!
+
+Distancias pruebas:
+- a 30cm
+- a 10m sin obstáculos
+- a 10m con la puerta cerrada
+- USB conectado
+- Todo en un entorno con bastantes WiFis
+
+`Bus 001 Device 011: ID 0bda:8176 Realtek Semiconductor Corp. RTL8188CUS 802.11n WLAN Adapter`
+
+Todas las pruebas se ejecutan durante 10 minutos.
+
+| prueba | dist | n_rx | PDR% | perd | dt med/p95 s | RSSI med/min (n) | ping loss% | RTT min/avg/max/mdev ms | Vbat | I mA | APs | canales |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T0_0m | 0.3 | 115 | 100.0 | 0 | 5.17/5.19 | -39.0/-42 (n=115) | 0.0 | 1.665/3.222/61.454/3.531 | 3.81 | 182.25 | 25 | [1, 2, 4, 6, 10, 11] |
+| T1_10m_LOS | 10 | 116 | 100.0 | 0 | 5.17/5.21 | -69.8/-78 (n=116) | 0.0 | 4.067/15.569/93.774/10.148 | 3.8 | 183.94 | 11 | [1, 2, 4, 6, 10, 11] |
+| T2_10m_VLOS | 10 | 115 | 100.0 | 0 | 5.17/5.2 | -73.3/-76 (n=115) | 0.333333 | 2.577/7.344/212.359/11.513 | 3.75 | 186.22 | 11 | [1, 2, 4, 6, 10, 11] |
+| T5_usb | 0.3 | 116 | 100.0 | 0 | 5.17/5.18 | -/- (n=-) | - | -/-/-/- | - | - | - | - |
+
+Notas:
+- T0_0m: WiFi lado a lado
+- T1_10m_LOS: WiFi línea con visión directa
+- T2_10m_VLOS: WiFi línea con una puerta cerrada en medio
+- T5_usb: usb directo
+
+## USB
+
+Usamos un script y no el programa principal de la estación base, porque este último ya usa MQTT, para probar el rendimiento de la conexión usando USB.
+
+`TEST_ID=T5_usb TEST_DISTANCIA_M=0.3 TEST_NOTA="usb directo" python3 scripts/lector_estacion.py /dev/ttyACM0 --log`
+
+Repetirlas bien con el nuevo programa
+
+## WiFi
+
+Saturación de la WiFi:
+`sudo iw dev wlan0 scan | grep -E "SSID|signal|primary channel"`
+
+Estado del enlace:
+`sudo iw dev wlan0 link`
+
+Ejecución de cada prueba:
+`udo TEST_ID=Tx_xm_x TEST_DISTANCIA_M=x TEST_NOTA="..." ~/venvs/estacion/bin/python -m estacion_base`
+
+A la vez en otra cosola hacemos:
+`ping -c 600 -i 1 192.168.4.1 > data/ping-T2_10m_VLOS.txt`
+
+Prueba T0_0m:
+```bash
+        signal: -40 dBm
+        rx bitrate: 121.5 MBit/s MCS 6 40MHz
+        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
+```
+
+Prueba T1_10m_LOS:
+```bash
+        signal: -70 dBm
+        rx bitrate: 6.0 MBit/s
+        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
+```
+
+Prueba T1_10m_VLOS:
+Casi no puedo conectar, hubo que cambiar el timeout para detectar el nodo desconectado, luego misteriosamente fue bien!
+```bash
+        signal: -74 dBm
+        rx bitrate: 1.0 MBit/s
+        tx bitrate: 150.0 MBit/s MCS 7 40MHz short GI
+```
+
+## ESP-NOW
+
+`sudo ENLACE_NODO=serial TEST_ID=Tx_xm_ESP-NOW TEST_DISTANCIA_M=x TEST_NOTA="..." ~/venvs/estacion/bin/python -m estacion_base`
+Prueba T0_0m: enlace rápido y estable como una roca.
+Prueba T1_10m_LOS:
+Prueba T1_10m_VLOS:
+
+## Meshtastic
+
+
+
+# 5. Estación auxiliar
 
 Cheap Yellow Display (CYD), puedo conectarle un sensor de temperatura y enviarlo también al MQTT de la estación base e incluso mostrarlo por la pantalla, no sé si se puede conectar mucho más porque las entradas son muy limitadas. Probablemente no usarlo para controlar relés porque complicaría las cosas, no?
 
-# 5. Conclusiones y mejoras futuras
+# 6. Conclusiones y mejoras futuras
 
 Hay muchas mejoras que se pueden implementar en el sistema, entre ellas destaco:
 
 - Emplear MQTT con *Ubidots*?
+- Mejorar la UI de la estación base, incluir RSSI del enlace si es relevante
 - Hacer el sistema realmente escalable para que una sola estación base pueda soportar múltiples nodos autónomos que se conectarían fácilmente sin tocar el código? si no es fácil de implementar lo dejamos
 - Modificar el programa de la estación base para que sea instalable como un servicio para que se inicie automáticamente cada vez que lo alimentemos y además podamos monitorizar su estado. Igualmente, cambiar la ubicación del log.
 - Realizar cajas impresas en 3D diseñadas a medida tanto para el nodo autónomo, separando los sensores que necesitan estar en el exterior con sus propias carcasas, como para la estación base.

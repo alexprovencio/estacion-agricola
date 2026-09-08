@@ -2,18 +2,20 @@
 # -*- coding: utf-8 -*-
 """Estación Agrícola - Estación base - Nodo autónomo.
 
-Hilo de lectura del nodo autónomo por MQTT (broker local).
+Hilo principal de la estación base.
 
 Autor: Alejandro Provencio Sanz <aprovenci9@alumno.uned.es>
 Fecha: 2026-09-03
 
 Práctica final de Comunicaciones Inalámbricas y Protocolos para el IoT.
 
-Recibe datos del nodo autónomo por el broker Mosquitto local, lo guarda en el
-estado compartido, ejecuta los automatismos (riego, alerta de rayos), sube
-los datos a Ubidots (cada config.INTERVALO_CLOUD segundos) y aplica los
-comandos de relé recibidos desde Ubidots y desde esagrau/base/control.
-También guardamos los datos en un fichero de log.
+Recibe la telemetría del nodo (por MQTT WiFi o por el inyector serie 
+USB/ESP-NOW/Meshtastic), la procesa con_procesar_telemetria, ejecuta 
+los automatismos, sube a Ubidots y aplica los comandos de relé.
+
+Los datos entran siempre por el broker local esagrau/nodos/+/telemetria y se
+procesan en _al_recibir_telemetria. En modo "serial" el inyector
+gateway_serial publica en el broker lo que llega por el puerto serie.
 """
 
 import json
@@ -23,6 +25,7 @@ import time
 from . import config
 from . import enlace
 from . import estado
+from . import gateway_serial
 from . import mqtt_local
 from . import perifericos
 from . import storage
@@ -141,22 +144,13 @@ def hilo_nube():
                 break
             time.sleep(0.1)
 
-def _al_recibir_telemetria(payload):
-    """Callback de esagrau/nodos/+/telemetria.
+def _procesar_telemetria(dato, enlace_extra):
+    """Procesa un dato ya parseado. Código común a todos los enlaces.
 
-    Marca t_rx nada más llegar (reloj de la Pi) y adjunta una muestra del enlace 
-    WiFi (RSSI/bitrate vía `iw`) para las pruebas de cobertura. Todo guardado en 
-    el log de data/*.json.
+    Actualiza el estado, ejecuta los automatismos y guarda en el log con la
+    información del enlace (RSSI/SNR según de dónde venga el dato).
     """
-    t_rx_mono = time.monotonic() # Tiempo desde arranque de la Pi
-    t_rx_wall = time.time()      # Hora real
-    dato = _leer_dato(payload)
-    if dato is None:
-        return
-    dato["t_rx_mono"] = t_rx_mono
-    dato["t_rx_wall"] = t_rx_wall
-    # Marca el último momento con datos: base de la detección de desconexión.
-    estado.ultimo_dato_mono = t_rx_mono
+    estado.ultimo_dato_mono = time.monotonic()
     # Si llega telemetría el nodo está vivo: limpia el aviso de nodo caído.
     if estado.aviso_nodo:
         estado.aviso_nodo = False
@@ -164,17 +158,49 @@ def _al_recibir_telemetria(payload):
         perifericos.decir("Nodo conectado")
     _automatismos(dato)
     try:
-        muestra_enlace = enlace.muestra()
-    except Exception:
-        muestra_enlace = {}
-    storage.guardar(dato, extra={"enlace": muestra_enlace})
+        storage.guardar(dato, extra={"enlace": enlace_extra})
+    except Exception as e:
+        print(f"Storage: {e}")
+
+
+def _al_recibir_telemetria(payload):
+    """Callback de esagrau/nodos/+/telemetria.
+
+    El payload puede ser:
+    - JSON crudo del nodo (enlace WiFi-MQTT): el RSSI se toma con enlace.muestra().
+    - Wrapper de un inyector serie (USB/ESP-NOW/Meshtastic):
+        {"enlace":{...}, "dato":{...}}.
+
+    Se procesa con _procesar_telemetria.
+    """
+    t_rx_mono = time.monotonic()  # Tiempo desde arranque de la Pi
+    t_rx_wall = time.time()       # Hora real
+    try:
+        obj = json.loads(payload)
+    except json.JSONDecodeError:
+        return
+    if isinstance(obj, dict) and "dato" in obj:
+        # Inyector serie (gateway): lleva su propia info de enlace.
+        enlace_extra = obj.get("enlace", {})
+        dato = _leer_dato(json.dumps(obj["dato"]))
+    else:
+        # Nodo WiFi (MQTT): medimos el enlace con iw.
+        try:
+            enlace_extra = enlace.muestra()
+        except Exception:
+            enlace_extra = {}
+        dato = _leer_dato(payload)
+    if dato is None:
+        return
+    dato["t_rx_mono"] = t_rx_mono
+    dato["t_rx_wall"] = t_rx_wall
+    _procesar_telemetria(dato, enlace_extra)
 
 def _al_recibir_estado(nodo_id, payload):
     """Callback de esagrau/nodos/+/estado: guarda la presencia del nodo.
 
     El nodo publica {"estado":"online"} con retain al conectar y el broker
-    publica {"estado":"offline"} como LWT si se cae. El offline dispara el
-    aviso en pantalla y sonoro, el online lo borra.
+    publica {"estado":"offline"} como LWT si se cae.
     """
     try:
         info = json.loads(payload)
@@ -196,12 +222,16 @@ def _al_recibir_estado(nodo_id, payload):
 def _comprobar_offline():
     """Considera el nodo desconectado si no llega telemetría en NODO_TIMEOUT_S.
 
-    No usamos el LWT de MQTT porque no era fiable.
+    Es la única fuente del aviso de nodo caído.
+    Conserva los campos extra que pueda poner _al_recibir_estado.
     No avisa si aún no ha llegado ningún dato.
     """
     if estado.ultimo_dato_mono == 0.0:
         return
-    if time.monotonic() - estado.ultimo_dato_mono > config.NODO_TIMEOUT_S:
+    offline = time.monotonic() - estado.ultimo_dato_mono > config.NODO_TIMEOUT_S
+    info = estado.nodos_online.setdefault("nodo-1", {})
+    info["estado"] = "offline" if offline else "online"
+    if offline:
         if not estado.aviso_nodo:
             estado.aviso_nodo = True
             estado.nodo_id_caido = "nodo-1"
@@ -233,6 +263,10 @@ def hilo():
         on_estado=_al_recibir_estado,
         on_control=_al_recibir_control,
     )
+    # En modo serie (USB/ESP-NOW/Meshtastic) arranca el inyector que
+    # publica en el broker lo que llega por el puerto serie.
+    if config.ENLACE_NODO == "serial":
+        threading.Thread(target=gateway_serial.hilo, daemon=True).start()
     ubidots.iniciar()
     while estado.running:
         _comprobar_offline()
