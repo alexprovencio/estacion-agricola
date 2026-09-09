@@ -53,21 +53,27 @@ LED_COLORS = {
 }
 LED_PRIORIDAD = ["rayo", "disturber", "riego", "seco", "ok"]
 
-# Enlace con el Nodo Autónomo para depuración
-PUERTO_NODO = os.getenv("PUERTO_NODO", "/dev/ttyACM0")
-BAUD = int(os.getenv("BAUD", "115200"))
+# Enlace con el Nodo Autónomo: puerto serie e inyector (USB/ESP-NOW/Meshtastic)
+BAUD = int(os.getenv("BAUD", "38400"))  # Default Meshtastic
 
-# Enlace de entrada del nodo: "mqtt" (WiFi-MQTT, actual) o "serial"
-# USB directo / ESP-NOW / Meshtastic, vía inyector gateway_serial.
-ENLACE_NODO = os.getenv("ENLACE_NODO", "mqtt")
-# Puerto del inyector serie (USB del nodo o del puente ESP-NOW)
-PUERTO_SERIAL = os.getenv("PUERTO_SERIAL", os.getenv("PUERTO_NODO", "/dev/ttyACM0"))
+# Enlace de entrada del nodo: "mqtt" (WiFi-MQTT) o "serial" (USB/ESP-NOW/Meshtastic).
+ENLACE_NODO = os.getenv("ENLACE_NODO", "serial")
+# Puerto del inyector serie (USB del nodo, del puente ESP-NOW o del 
+# Faketec Meshtastic).
+PUERTO_SERIAL = os.getenv("PUERTO_SERIAL", "/dev/ttyAMA0")
+
+# Identificador de este nodo.
+NODO_ID = os.getenv("NODO_ID", "nodo-1")
 
 # Broker MQTT Mosquitto local
 MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_PORT = int(os.getenv("MQTT_PORT", "8883"))
 MQTT_USER = os.getenv("MQTT_USER", "estacion-base")
 MQTT_PASS = os.getenv("MQTT_PASS", "")
+# TLS con el broker local. MQTT_CA -> CA de los certificados del broker.
+MQTT_TLS = os.getenv("MQTT_TLS", "true").lower() in ("1", "true", "yes")
+MQTT_CA = os.getenv("MQTT_CA",
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ca.crt")))
 
 # Ubidots
 # Cada dispositivo tiene su propio token y label. Se leen del .env 
@@ -123,7 +129,7 @@ WIFI_IFACE = os.getenv("WIFI_IFACE", "")
 # Detección de nodo desconectado.
 # No se avisa por el LWT, si no cuando no llega telemetría en NODO_TIMEOUT_S segundos.
 # Incrementado porque se desconectaba demasiado.
-NODO_TIMEOUT_S = int(os.getenv("NODO_TIMEOUT_S", "15"))
+NODO_TIMEOUT_S = int(os.getenv("NODO_TIMEOUT_S", "90"))
 
 # Persistencia local en disco
 # Directorio donde se almacenan los logs

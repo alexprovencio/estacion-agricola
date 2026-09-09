@@ -110,7 +110,7 @@ def _calcular_rssi(registros):
 def _media_energia(registros, clave):
     """Devuelve la media de una magnitud eléctrica de la batería para una clave dada."""
     valores = [
-        r["dato"].get("energia", {}).get(clave)
+        r["dato"].get(clave)
         for r in registros
     ]
     valores = [valor for valor in valores if isinstance(valor, (int, float))]

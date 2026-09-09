@@ -83,6 +83,8 @@ def iniciar(on_telemetria=None, on_estado=None, on_control=None):
     _cliente.on_disconnect = _on_disconnect
     _cliente.on_message = _on_message
     _cliente.reconnect_delay_set(min_delay=1, max_delay=30)
+    if config.MQTT_TLS:
+        _cliente.tls_set(ca_certs=config.MQTT_CA)
     _cliente.connect(config.MQTT_HOST, config.MQTT_PORT, keepalive=60)
     _cliente.loop_start()
     return _cliente
@@ -115,14 +117,16 @@ def publicar_estado():
         print(f"MQTT local: no se pudo publicar estado ({e})")
 
 
-def publicar_telemetria(msg, nodo_id="nodo-1", qos=1):
+def publicar_telemetria(msg, nodo_id=None, qos=1):
     """Publica telemetría de un nodo en el broker local.
 
     Usado por inyectores de enlace (gateway_serial para USB/ESP-NOW/
-    Meshtastic).
+    Meshtastic). Usa config.NODO_ID si no se indica otro.
     """
     if _cliente is None:
         return
+    if nodo_id is None:
+        nodo_id = config.NODO_ID
     try:
         _cliente.publish(f"esagrau/nodos/{nodo_id}/telemetria",
                          json.dumps(msg), qos=qos)

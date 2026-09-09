@@ -64,29 +64,27 @@ def dibujar():
         display.display(img)
         return
 
-    amb = estado.ultimo_dato.get("amb", {})
-    ray = estado.ultimo_dato.get("rayos", {})
+    u = estado.ultimo_dato
 
     if estado.estado_ui == estado.ESTADO_PRINCIPAL:
         draw.text((10, 8),
-                  f"{amb.get('temp_amb', 0):.1f}°C  {amb.get('hum_amb', 0):.0f}%  "
-                  f"{amb.get('presion_hpa', 0):.0f}hPa",
+                  f"{u.get('temp_amb', 0):.1f}°C  {u.get('hum_amb', 0):.0f}%  "
+                  f"{u.get('presion_hpa', 0):.0f}hPa",
                   font=font_mid, fill="white")
         draw.text((10, 32),
-                  f"Luz {amb.get('luz_lux', 0):.0f} lux  UV {estado.ultimo_dato.get('uv_index', 0):.1f}",
+                  f"Luz {u.get('luz_lux', 0):.0f} lux  UV {u.get('uv_index', 0):.1f}",
                   font=font_mid, fill="white")
-        hum_pct = estado.ultimo_dato.get("hum_suelo_pct", 0)
+        hum_pct = u.get("hum_suelo_pct", 0)
         draw.text((10, 56),
-                  f"Suelo {estado.ultimo_dato.get('temp_suelo', 0):.1f}°C  Hum {hum_pct}%",
+                  f"Suelo {u.get('temp_suelo', 0):.1f}°C  Hum {hum_pct}%",
                   font=font_mid, fill="white")
-        ene = estado.ultimo_dato.get("energia", {})
-        draw.text((10, 80), f"Bat {ene.get('v_bat', 0):.2f}V", font=font_small,
+        draw.text((10, 80), f"Bat {u.get('v_bat', 0):.2f}V", font=font_small,
                   fill="#AAAAAA")
-        estado_r = ray.get("estado", "-")
+        estado_r = u.get("estado_rayos", "-")
         color = "red" if estado_r == "rayo" else "yellow" if estado_r == "disturber" else "white"
         draw.text((120, 80), f"Rayos: {estado_r}", font=font_small, fill=color)
-        if "dist_km" in ray:
-            draw.text((200, 80), f"{ray['dist_km']}km", font=font_small, fill="white")
+        if "dist_km" in u:
+            draw.text((200, 80), f"{u['dist_km']}km", font=font_small, fill="white")
 
         _pinta_reles(draw)
 

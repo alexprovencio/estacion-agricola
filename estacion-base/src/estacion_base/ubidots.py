@@ -26,9 +26,8 @@ from . import config
 from . import estado
 from . import mqtt_local
 
-# Habría que usar conexión segura...
 UBI_HOST = "industrial.api.ubidots.com"
-UBI_PORT = 1883
+UBI_PORT = 8883  # TLS
 
 _cliente_nodo = None
 _cliente_estacion = None
@@ -81,6 +80,8 @@ def _nuevo_cliente(token, on_connect):
     cliente.on_connect = on_connect
     cliente.on_disconnect = _on_disconnect
     cliente.reconnect_delay_set(min_delay=1, max_delay=30)
+    # Ubidots por TLS: verifica contra los certificados del sistema.
+    cliente.tls_set()
     return cliente
 
 def iniciar():
@@ -130,25 +131,21 @@ def _estado_rayos_num(estado):
     return config.UBI_ESTADO_RAYOS.get(estado, 0)
 
 def _payload_nodo(dato):
-    """Variables del nodo autónomo."""
-    amb = dato.get("amb", {})
-    suelo = dato.get("suelo", {})
-    energia = dato.get("energia", {})
-    rayos = dato.get("rayos", {})
+    """Variables del nodo autónomo (ya aplanadas antes)."""
     d = {}
-    d["temp_amb"] = amb.get("temp_amb")
-    d["hum_amb"] = amb.get("hum_amb")
-    d["presion_hpa"] = amb.get("presion_hpa")
-    d["luz_lux"] = amb.get("luz_lux")
+    d["temp_amb"] = dato.get("temp_amb")
+    d["hum_amb"] = dato.get("hum_amb")
+    d["presion_hpa"] = dato.get("presion_hpa")
+    d["luz_lux"] = dato.get("luz_lux")
     d["uv_index"] = dato.get("uv_index")
-    d["temp_suelo"] = suelo.get("temp_suelo")
-    d["hum_suelo"] = suelo.get("hum_suelo")
+    d["temp_suelo"] = dato.get("temp_suelo")
+    d["hum_suelo"] = dato.get("hum_suelo")
     d["hum_suelo_pct"] = dato.get("hum_suelo_pct")
-    d["v_bat"] = energia.get("v_bat")
-    d["i_ma"] = energia.get("i_ma")
-    d["p_mw"] = energia.get("p_mw")
-    d["estado_rayos"] = _estado_rayos_num(rayos.get("estado")) #  Cómo número
-    d["dist_km"] = rayos.get("dist_km")
+    d["v_bat"] = dato.get("v_bat")
+    d["i_ma"] = dato.get("i_ma")
+    d["p_mw"] = dato.get("p_mw")
+    d["estado_rayos"] = _estado_rayos_num(dato.get("estado_rayos"))  # Como número
+    d["dist_km"] = dato.get("dist_km")
     return {k: v for k, v in d.items() if v is not None}
 
 def _payload_estacion():

@@ -50,24 +50,38 @@ def _uv_indice(raw):
     # 100 mV por índice; el GUVA se satura en índice 10 (1 V)
     return round(min(mv / config.UV_MV_POR_INDICE, config.UV_INDICE_MAX), 1)
 
+# Claves cortas del payload -> nombres largos usados internamente.
+_SIMPLES = {
+    "ta": "temp_amb", "ha": "hum_amb", "pa": "presion_hpa",
+    "lx": "luz_lux", "uv": "uv", "ts": "temp_suelo", "hs": "hum_suelo",
+    "vb": "v_bat", "ia": "i_ma", "pw": "p_mw",
+    "rd": "dist_km", "nid": "node_id",
+}
+# El estado de rayos viaja como int: 0=ok, 1=ruido, 2=disturber, 3=rayo.
+_RAYOS_INT = {0: "ok", 1: "ruido", 2: "disturber", 3: "rayo"}
+
 def _leer_dato(linea):
-    """Parsea una línea JSON del nodo autónomo y 
-    actualiza el estado compartido.
+    """Parsea una línea JSON y actualiza el estado.
+
+    Convierte las claves cortas del wire a nombres largos, calcula hum_suelo_pct
+    y uv_index, y guarda el dato en estado.ultimo_dato.
     """
     try:
         dato = json.loads(linea)
     except json.JSONDecodeError:
         return None
-    # Datos del suelo y UV vienen anidados, los extraemos
-    suelo = dato.get("suelo", {})
-    amb = dato.get("amb", {})
-    if "hum_suelo" in suelo:
-        dato["hum_suelo"] = suelo["hum_suelo"]
-        dato["hum_suelo_pct"] = _hum_pct(suelo["hum_suelo"])
-    if "temp_suelo" in suelo:
-        dato["temp_suelo"] = suelo["temp_suelo"]
-    if "uv" in amb:
-        dato["uv_index"] = _uv_indice(amb["uv"])
+    # Des-abreviar claves cortas -> nombres largos
+    for corta, larga in _SIMPLES.items():
+        if corta in dato:
+            dato[larga] = dato.pop(corta)
+    if "re" in dato:
+        dato["estado_rayos"] = _RAYOS_INT.get(dato.pop("re"), "ok")
+    if "hum_suelo" in dato:
+        dato["hum_suelo_pct"] = _hum_pct(dato["hum_suelo"])
+    if "uv" in dato:
+        dato["uv_index"] = _uv_indice(dato["uv"])
+    if "node_id" not in dato:
+        dato["node_id"] = config.NODO_ID
     estado.ultimo_dato = dato
     return dato
 
@@ -78,12 +92,13 @@ def _estado_led(dato):
     config.LED_PRIORIDAD.
     """
     hum = dato.get("hum_suelo", 0)
-    ray = dato.get("rayos", {})
+    est_ray = dato.get("estado_rayos")
+    dist = dato.get("dist_km", 999)
     candidatos = {"ok"}
-    if ray.get("estado") == "rayo" and ray.get("dist_km", 40) < config.DIST_ALERTA:
+    if est_ray == "rayo" and dist < config.DIST_ALERTA:
         # Rayo cercano
         candidatos.add("rayo")
-    if ray.get("estado") == "disturber":
+    if est_ray == "disturber":
         candidatos.add("disturber")
     if estado.rele_manual[config.RELE_RIEGO]:
         candidatos.add("riego")
@@ -115,8 +130,8 @@ def _automatismos(dato):
                         lambda: perifericos.set_rele(config.RELE_RIEGO, False)).start()
 
     # Alerta de tormenta por rayo cercano
-    ray = dato.get("rayos", {})
-    if ray.get("estado") == "rayo" and ray.get("dist_km", 40) < config.DIST_ALERTA:
+    est_ray = dato.get("estado_rayos")
+    if est_ray == "rayo" and dato.get("dist_km", 40) < config.DIST_ALERTA:
         if not estado.aviso_activo:
             estado.aviso_activo = True
             perifericos.decir("Alerta, tormenta cerca")
@@ -229,12 +244,12 @@ def _comprobar_offline():
     if estado.ultimo_dato_mono == 0.0:
         return
     offline = time.monotonic() - estado.ultimo_dato_mono > config.NODO_TIMEOUT_S
-    info = estado.nodos_online.setdefault("nodo-1", {})
+    info = estado.nodos_online.setdefault(config.NODO_ID, {})
     info["estado"] = "offline" if offline else "online"
     if offline:
         if not estado.aviso_nodo:
             estado.aviso_nodo = True
-            estado.nodo_id_caido = "nodo-1"
+            estado.nodo_id_caido = config.NODO_ID
             perifericos.decir("Alerta, nodo desconectado")
             perifericos.actualizar_led("rayo")
 

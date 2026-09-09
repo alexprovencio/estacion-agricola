@@ -21,6 +21,30 @@ Hay que prestar atención a controlar los posibles errores de conexión que se p
 
 Paso a usar el broker MQTT de la estación base. Uso la librería <https://registry.platformio.org/libraries/marvinroger/AsyncMqttClient> para comunicarme con él. Uso el ejemplo disponible para el ESP32 para realizar mi implementación <https://registry.platformio.org/libraries/marvinroger/AsyncMqttClient/examples/FullyFeatured-ESP32/FullyFeatured-ESP32.ino>. Iba a usar los *timers* de *FreeRTOS* invocados expresamente para realizar reconexiones sin bloquear el *loop* principal y no tener que crear hilos tal como se hace en el ejemplo, pero me acabo de enterar de que el núcleo de ESP32 para Arduino ya corre de forma nativa sobre FreeRTOS <https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/system/freertos.html>. Yo he usado FreeRTOS antes en microcontroladores STM32, por lo que la integración nativa en los ESP32 es una buena noticia, le sacaré partido de aquí en adelante.
 
+Variables reducidas en el payload para ahorrar al transmitir, especialmente para Meshtastic donde llegaban truncados los paquetes a veces.
+
+```json
+{"nid":"nodo-1","seq":1,"t":31,"ta":25.9,"ha":30.1,"pa":935.1,"lx":771.8,"uv":23,"ts":24.1,"hs":2828,"vb":4,"ia":79.9,"pw":317.5,"re":"ok"}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `nid` | string | id del nodo autónomo |
+| `seq` | int | número del paquete para detectar pérdidas en las pruebas |
+| `t` | int | tiempo de actividad del nodo en segundos (`millis()/1000`) |
+| `ta` | float °C | temperatura ambiente (AHT20) |
+| `ha` | float % | humedad relativa ambiente (AHT20) |
+| `pa` | float hPa | presión atmosférica (BMP280) |
+| `lx` | float lux | iluminación (VEML7700) |
+| `uv` | int 0-4095 | ADC raw del GUVA-S12SD |
+| `ts` | float °C | temperatura del suelo (DS18B20) |
+| `hs` | int 0-4095 | ADC raw del higrómetro |
+| `vb` | float V | no usado (INA226) |
+| `ia` | float mA | no usado (INA226) |
+| `pw` | float mW | no usado (INA226) |
+| `re` | int | `ok` \| `ruido` \| `disturber` \| `rayo` (AS3935) |
+| `rd` | int km | distancia al frente de tormenta (solo si `estado`=`rayo`) |
+
 ### UART por USB
 
 Inicialmente usé la conexión por USB que ya tenía en la práctica de Sistemas y comprobé que funcionaba bien el cambio a MQTT tanto en la estación base como en Ubidots.
@@ -77,9 +101,9 @@ Los pines del faketec no son los de la placa! son los del nRF, un montón de tie
 En la pi hay que desactivar el puerto compartido con la consola como se ve en la imagen y lanzar el programa con:
 `sudo ENLACE_NODO=serial PUERTO_SERIAL=/dev/ttyAMA0 NODO_TIMEOUT_S=120 BAUD=38400 ~/venvs/estacion/bin/python -m estacion_base`
 
-Falla el payload con batería porque es más grande y sobrepasa el límite de 240 Bytes de Meshtastic, lo compactamos redondeando floats a 2 decimales, no, a 1 decimal porque si no falla cuando detecta rayos y no me apetece tocar más. Por seguridad y para mejorarlo voy a reducir el tamaño del payload cambiando los nombres a las variables y aplanando las variables como ya hicimos para enviarlas a ubidots (que se va a joder con los nuevos nombres, pero bueno). Esto da algo de margen para añadir más variables (velocidad del viento, lluvia, dirección del viento...) en un mismo paquete LoRa. El sistema no es escalable ahora mismo, nodo-1 está hasta en funciones, hay que solucionarlo
+Falla el payload con batería porque es más grande y sobrepasa el límite de 240 Bytes de Meshtastic, lo compactamos redondeando floats a 2 decimales, no, a 1 decimal porque si no falla cuando detecta rayos y no me apetece tocar más. Por seguridad y para mejorarlo voy a reducir el tamaño del payload cambiando los nombres a las variables y aplanando las variables como ya hicimos para enviarlas a ubidots (que se va a joder con los nuevos nombres, pero bueno). Esto da algo de margen para añadir más variables (velocidad del viento, lluvia, dirección del viento...) en un mismo paquete LoRa, se podría quitar el stringh del estado de rayos y usar un número de referencia también. El sistema no es escalable ahora mismo, nodo-1 está hasta en funciones, hay que solucionarlo.
 
-Ahora mismo mandamos los datos del nodo autónomo cada 30 segundos, en realidad debería ser cada más tiempo. Este es el tiempo que tardamos en leer el registro de interrupción del sensor de rayos, si después de un rayo hay interferencias o ruido, perdemos el evento de rayo detectado anteriormente. Esto hay que corregirlo guardando en un registro temporal el dato más crítico del registro de interrupción para enviarlo con el siguiente paquete.
+Ahora mismo mandamos los datos del nodo autónomo cada 30 segundos, en realidad debería ser cada más tiempo. Este es el tiempo que tardamos en leer el registro de interrupción del sensor de rayos, si después de un rayo hay interferencias o ruido, perdemos el evento de rayo detectado anteriormente. Esto hay que corregirlo guardando en un registro temporal el dato más crítico del registro de interrupción para enviarlo con el siguiente paquete. Lo hago como tarea porque hacerlo directamente en el ISR está mal al tener que leer el I2C, ya había avisos de que este sensor por I2C no iba muy fino, mejor no forzar.
 
 ## 2.1 Alimentación
 
@@ -117,6 +141,9 @@ A continuación paso a diseñar los temas que usaré para todos los dispositivos
 
 De esta forma evitamos rebotes ya que la única que lee de `esagrau/base/control` para activar los relés es la propia estación base, y la única que actualiza el estado real de los relés en `esagrau/base/estado` también es la propia estación base.
 
+### Asegurar el broker
+
+Genero los certificados autofirmados del servidor con su IP, es un poco absurdo si voy a usar meshtastic, pero útil para el wifi. Lo implemento para el broker interno y para ubidots, para WiFi no, mucho curro y no lo voy a usar.
 
 ## 3.2. Programa de monitorización y control
 
@@ -248,4 +275,4 @@ Hay muchas mejoras que se pueden implementar en el sistema, entre ellas destaco:
 - Mejorar la estación auxiliar para incluir el accionamiento de los relés, la UI e integrar algún sensor que podmeos mandar al broker MQTT de la estación base.
 - Usar el "sender:" que Meshtastic antepone a los mensajes que recibimos para identificar al nodo que los envía y quitar su id del payload.
 - Estudiar las implicaciones de usar una red pública para nuestros nodos, está muy bien para que el resto nos hagan relay pero puede haber problemas de seguridad o de moralidad al sobrecargar la red.
-- 
+- Modificar el firmware del nodo autónomo para que sus valores modificables de secrets.h sean configurables con software después de flashearlo con un firmware genérico poniéndolas como params.

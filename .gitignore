@@ -17,3 +17,6 @@ data/
 
 # Cache general
 .cache/
+
+# Certificados de CA
+ca.crt

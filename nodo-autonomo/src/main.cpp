@@ -110,9 +110,40 @@ DallasTemperature ds18b20(&oneWire);
 
 // Interrupción del sensor de rayos
 volatile bool as3935_interrupt = false;
+// Estado latcheado por la tarea (prioridad): 0=ok, 1=ruido, 2=disturber, 3=rayo
+volatile uint8_t rayo_evento = 0;
+volatile uint8_t rayo_dist_km = 0;
 
 void IRAM_ATTR onAs3935() {
   as3935_interrupt = true;
+}
+
+// Código de prioridad de un evento del AS3935 (rayo > disturber > ruido).
+uint8_t _codigoEvento(int ev) {
+  switch (ev) {
+    case RAYO_INT:    return 3;
+    case DISTURBER_INT: return 2;
+    case RUIDO_INT:   return 1;
+    default:          return 1;
+  }
+}
+
+// Tarea: atiende la interrupción y latchea el evento por prioridad, para no
+// perder un rayo si después llega un disturber/ruido antes del siguiente envío.
+// Lee por I2C el registro.
+void tareaRayos(void*) {
+  for (;;) {
+    if (as3935_interrupt) {
+      as3935_interrupt = false;
+      int ev = rayos.readInterruptReg();
+      uint8_t cod = _codigoEvento(ev);
+      if (cod >= rayo_evento) {  // no pisar un rayo con algo menor
+        rayo_evento = cod;
+        if (ev == RAYO_INT) rayo_dist_km = rayos.distanceToStorm();
+      }
+    }
+    vTaskDelay(100 / portTICK_PERIOD_MS); // 100 ms, PROBAR 
+  }
 }
 
 // Imprime la MAC real del dispositivo (leída de efuse, no depende del estado WiFi).
@@ -137,59 +168,38 @@ uint32_t seq = 0;
 void leerAmbientales(JsonObject d) {
   sensors_event_t hum, temp;
   if (aht.getEvent(&hum, &temp)) {
-    d["temp_amb"] = temp.temperature;
-    d["hum_amb"]  = hum.relative_humidity;
+    d["ta"] = temp.temperature;
+    d["ha"] = hum.relative_humidity;
   }
   if (bmp.takeForcedMeasurement()) {
-    d["presion_hpa"] = bmp.readPressure() / 100.0;
+    d["pa"] = bmp.readPressure() / 100.0;
   }
-  d["luz_lux"] = veml.readLux();
-  d["uv"]     = analogRead(PIN_ADC_GUVA);  // índice UV, valor ADC crudo
+  d["lx"] = veml.readLux();
+  d["uv"] = analogRead(PIN_ADC_GUVA);  // índice UV, valor ADC crudo
 }
 
 // Sensores de suelo: temperatura y humedad (analógico)
 void leerSuelo(JsonObject d) {
   ds18b20.requestTemperatures();
-  d["temp_suelo"] = ds18b20.getTempCByIndex(0);
-  d["hum_suelo"]  = analogRead(PIN_ADC_HIGROMETRO);
+  d["ts"] = ds18b20.getTempCByIndex(0);
+  d["hs"] = analogRead(PIN_ADC_HIGROMETRO);
 }
 
 // Módulo de energía INA226: tensión, corriente y potencia de la batería
 void leerEnergia(JsonObject d) {
-  d["v_bat"] = ina.getBusVoltage();
-  d["i_ma"]  = ina.getCurrent_mA();
-  d["p_mw"]  = ina.getPower_mW();
+  d["vb"] = ina.getBusVoltage();
+  d["ia"] = ina.getCurrent_mA();
+  d["pw"] = ina.getPower_mW();
 }
 
-// Detector de rayos AS3935
+// Detector de rayos AS3935: usa el estado latcheado por tareaRayos (por prioridad).
+// Se manda como int (0=ok, 1=ruido, 2=disturber, 3=rayo). Tras reportar se resetea.
 void leerRayos(JsonObject d) {
-  // Ha habido algún evento
-  if (as3935_interrupt) {
-    as3935_interrupt = false;
-    int evento = rayos.readInterruptReg();
-    switch (evento) {
-      // Es un rayo!
-      case RAYO_INT:
-        d["estado"] = "rayo";
-        d["dist_km"] = rayos.distanceToStorm();
-        break;
-      // interferencias eléctricas
-      case DISTURBER_INT:
-        d["estado"] = "disturber";
-        break;
-      // Nivel de ruido ambiental demasiado alto
-      case RUIDO_INT:
-        d["estado"] = "ruido";
-        break;
-      // Esto ocurría cuando estaba mal conectado el pin de interrupción
-      default:
-        d["estado"] = "desconocido";
-        break;
-    }
-  // Nada detectado
-  } else {
-    d["estado"] = "ok";
-  }
+  uint8_t ev = rayo_evento;
+  d["re"] = ev;                          // int
+  if (ev == 3) d["rd"] = rayo_dist_km;   // distancia solo si hay rayo
+  rayo_evento = 0;
+  rayo_dist_km = 0;
 }
 
 #if defined(TRANSPORTE_WIFI)
@@ -305,6 +315,9 @@ void setup() {
     Serial.println("Error: AS3935 no responde");
   }
 
+  // Tarea que latchea los eventos de rayo por prioridad para que no se pierdan.
+  xTaskCreate(tareaRayos, "rayos", 4096, NULL, 1, NULL);
+
   Serial.println("Nodo listo, enviando lecturas");
 }
 
@@ -321,23 +334,24 @@ void loop() {
 #endif
 
   JsonDocument doc;
+  doc["nid"] = NODE_ID;
   doc["seq"] = seq++;
   doc["t"] = millis() / 1000;
-  leerAmbientales(doc["amb"].to<JsonObject>());
-  leerSuelo(doc["suelo"].to<JsonObject>());
-  leerEnergia(doc["energia"].to<JsonObject>());
-  leerRayos(doc["rayos"].to<JsonObject>());
+  leerAmbientales(doc.as<JsonObject>());
+  leerSuelo(doc.as<JsonObject>());
+  leerEnergia(doc.as<JsonObject>());
+  leerRayos(doc.as<JsonObject>());
 
   // Reducir la precisión de los flotantes a 1 decimal: el payload es idéntico
   // en todos los transportes y, aun con batería y rayo, cabe en un paquete LoRa.
-  doc["amb"]["temp_amb"]    = roundf((float)doc["amb"]["temp_amb"]    * 10) / 10;
-  doc["amb"]["hum_amb"]     = roundf((float)doc["amb"]["hum_amb"]     * 10) / 10;
-  doc["amb"]["presion_hpa"] = roundf((float)doc["amb"]["presion_hpa"] * 10) / 10;
-  doc["amb"]["luz_lux"]     = roundf((float)doc["amb"]["luz_lux"]     * 10) / 10;
-  doc["suelo"]["temp_suelo"] = roundf((float)doc["suelo"]["temp_suelo"] * 10) / 10;
-  doc["energia"]["v_bat"]   = roundf((float)doc["energia"]["v_bat"]    * 10) / 10;
-  doc["energia"]["i_ma"]    = roundf((float)doc["energia"]["i_ma"]     * 10) / 10;
-  doc["energia"]["p_mw"]    = roundf((float)doc["energia"]["p_mw"]     * 10) / 10;
+  doc["ta"] = roundf((float)doc["ta"] * 10) / 10;
+  doc["ha"] = roundf((float)doc["ha"] * 10) / 10;
+  doc["pa"] = roundf((float)doc["pa"] * 10) / 10;
+  doc["lx"] = roundf((float)doc["lx"] * 10) / 10;
+  doc["ts"] = roundf((float)doc["ts"] * 10) / 10;
+  doc["vb"] = roundf((float)doc["vb"] * 10) / 10;
+  doc["ia"] = roundf((float)doc["ia"] * 10) / 10;
+  doc["pw"] = roundf((float)doc["pw"] * 10) / 10;
 
 
 #if defined(TRANSPORTE_WIFI)
