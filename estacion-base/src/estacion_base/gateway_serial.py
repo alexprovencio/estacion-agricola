@@ -60,8 +60,10 @@ def hilo():
             obj = json.loads(linea)
         except json.JSONDecodeError:
             continue
+        # Detecta que ya tiene wrapper (USB directo/puente ESP-NOW)
         if isinstance(obj, dict) and "dato" in obj:
             mqtt_local.publicar_telemetria(obj)
+        # Es Meshtastic. Se envuelve.
         else:
             # JSON crudo, muy pesado para Meshtastic el otro.
             mqtt_local.publicar_telemetria(

@@ -73,9 +73,10 @@
 #define PIN_LED             8
 
 // UART al Faketec con Meshtastic
-// GPIO2 = TX, GPIO7 = RX - COMPROBAR QUE NO ESTÉN INVERTIDOS
-#define SERIAL1_RX         7
-#define SERIAL1_TX         2
+// GPIO21 = TX (al RX del Faketec), GPIO20 = RX (al TX del Faketec)
+// No son D3 y D4 marcados en la placa!!!!
+#define SERIAL1_RX         20
+#define SERIAL1_TX         21
 #define MESHTASTIC_BAUD    38400
 
 #define UART_BAUD          115200
@@ -273,7 +274,6 @@ void setup() {
 #elif defined(TRANSPORTE_ESP_NOW)
   iniciarEspNow();
 #elif defined(TRANSPORTE_MESHTASTIC)
-  // UART al Faketec, que difunde por la malla LoRa.
   Serial1.begin(MESHTASTIC_BAUD, SERIAL_8N1, SERIAL1_RX, SERIAL1_TX);
 #endif
 
@@ -328,6 +328,18 @@ void loop() {
   leerEnergia(doc["energia"].to<JsonObject>());
   leerRayos(doc["rayos"].to<JsonObject>());
 
+  // Reducir la precisión de los flotantes a 1 decimal: el payload es idéntico
+  // en todos los transportes y, aun con batería y rayo, cabe en un paquete LoRa.
+  doc["amb"]["temp_amb"]    = roundf((float)doc["amb"]["temp_amb"]    * 10) / 10;
+  doc["amb"]["hum_amb"]     = roundf((float)doc["amb"]["hum_amb"]     * 10) / 10;
+  doc["amb"]["presion_hpa"] = roundf((float)doc["amb"]["presion_hpa"] * 10) / 10;
+  doc["amb"]["luz_lux"]     = roundf((float)doc["amb"]["luz_lux"]     * 10) / 10;
+  doc["suelo"]["temp_suelo"] = roundf((float)doc["suelo"]["temp_suelo"] * 10) / 10;
+  doc["energia"]["v_bat"]   = roundf((float)doc["energia"]["v_bat"]    * 10) / 10;
+  doc["energia"]["i_ma"]    = roundf((float)doc["energia"]["i_ma"]     * 10) / 10;
+  doc["energia"]["p_mw"]    = roundf((float)doc["energia"]["p_mw"]     * 10) / 10;
+
+
 #if defined(TRANSPORTE_WIFI)
   // Depuración por USB + MQTT a la estación base
   serializeJson(doc, Serial);
@@ -353,10 +365,9 @@ void loop() {
   serializeJson(doc, Serial);
   Serial.println();
 #elif defined(TRANSPORTE_MESHTASTIC)
-  // JSON crudo por UART al Faketec (no cabe el wrapper en el límite de LoRa).
-  // serializeJson(doc, Serial1);
-  // Serial1.println();
-  Serial1.println("test");
+  // El JSON ya cabe en un paquete LoRa .
+  serializeJson(doc, Serial1);
+  Serial1.println();
   // Depuración por USB
   serializeJson(doc, Serial);
   Serial.println();

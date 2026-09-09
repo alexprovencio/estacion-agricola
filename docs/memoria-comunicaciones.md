@@ -69,7 +69,17 @@ Pasos:
 - Configurar un canal principal (AgrSta) común compartiendo la clave
 - Activar el serial a 38400 bauds con TEXTMSG y los pines que 
 - Configurar el Gatito Mobile para administrar esos nodos remotamente
-- 
+
+Los pines del faketec no son los de la placa! son los del nRF, un montón de tiempo perdido con esto, son 20 y 22, no 3 y 4...
+
+![alt text](image-1.png)
+
+En la pi hay que desactivar el puerto compartido con la consola como se ve en la imagen y lanzar el programa con:
+`sudo ENLACE_NODO=serial PUERTO_SERIAL=/dev/ttyAMA0 NODO_TIMEOUT_S=120 BAUD=38400 ~/venvs/estacion/bin/python -m estacion_base`
+
+Falla el payload con batería porque es más grande y sobrepasa el límite de 240 Bytes de Meshtastic, lo compactamos redondeando floats a 2 decimales, no, a 1 decimal porque si no falla cuando detecta rayos y no me apetece tocar más. Por seguridad y para mejorarlo voy a reducir el tamaño del payload cambiando los nombres a las variables y aplanando las variables como ya hicimos para enviarlas a ubidots (que se va a joder con los nuevos nombres, pero bueno). Esto da algo de margen para añadir más variables (velocidad del viento, lluvia, dirección del viento...) en un mismo paquete LoRa. El sistema no es escalable ahora mismo, nodo-1 está hasta en funciones, hay que solucionarlo
+
+Ahora mismo mandamos los datos del nodo autónomo cada 30 segundos, en realidad debería ser cada más tiempo. Este es el tiempo que tardamos en leer el registro de interrupción del sensor de rayos, si después de un rayo hay interferencias o ruido, perdemos el evento de rayo detectado anteriormente. Esto hay que corregirlo guardando en un registro temporal el dato más crítico del registro de interrupción para enviarlo con el siguiente paquete.
 
 ## 2.1 Alimentación
 
@@ -236,3 +246,6 @@ Hay muchas mejoras que se pueden implementar en el sistema, entre ellas destaco:
 - Usar mejores sensores de suelo ya que los empleados se corroen fácilmente como he comprobado.
 - Crear PCBs para todo el sistema, especialmente para el nodo autónomo, y así reducir su tamaño y coste.
 - Mejorar la estación auxiliar para incluir el accionamiento de los relés, la UI e integrar algún sensor que podmeos mandar al broker MQTT de la estación base.
+- Usar el "sender:" que Meshtastic antepone a los mensajes que recibimos para identificar al nodo que los envía y quitar su id del payload.
+- Estudiar las implicaciones de usar una red pública para nuestros nodos, está muy bien para que el resto nos hagan relay pero puede haber problemas de seguridad o de moralidad al sobrecargar la red.
+- 
