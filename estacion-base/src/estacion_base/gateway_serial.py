@@ -7,9 +7,21 @@ Fecha: 2026-09-03
 
 Práctica final de Comunicaciones Inalámbricas y Protocolos para el IoT.
 
-Lee la telemetría que llega por un puerto serie (USB del nodo o el puente
-ESP-NOW/Meshtastic) y la publica en el broker local, para que el consumidor
-común (_al_recibir_telemetria) la procese.
+Lee la telemetría que llega por un puerto serie (USB del nodo, el puente
+ESP-NOW o el Faketec Meshtastic) y la publica en el broker local, para que el
+consumidor común (_al_recibir_telemetria) la procese. No procesa nada, solo
+inyecta.
+
+El puerto emite:
+- Un wrapper {"enlace":{...}, "dato":{...}} (USB directo / puente ESP-NOW):
+  se reenvía tal cual.
+- JSON crudo del nodo (Meshtastic no puede llevar el wrapper por el tamaño):
+  se envuelve con {"enlace":{"origen":"meshtastic"}}.
+- Con el modo TEXTMSG de Meshtastic el mensaje llega prefijado con "sender: ",
+  que se recorta hasta el primer '{'.
+
+Así el mismo módulo sirve para USB, ESP-NOW y Meshtastic: solo cambia qué
+dispositivo hay al otro lado del puerto.
 """
 
 import json
@@ -39,10 +51,19 @@ def hilo():
             continue
         if not linea:
             continue
+        # El módulo serial de Meshtastic en modo TEXTMSG antepone "sender: "
+        # al JSON. Recortamos hasta el primer '{' para quedarnos con el payload.
+        idx = linea.find("{")
+        if idx > 0:
+            linea = linea[idx:]
         try:
             obj = json.loads(linea)
         except json.JSONDecodeError:
             continue
         if isinstance(obj, dict) and "dato" in obj:
             mqtt_local.publicar_telemetria(obj)
+        else:
+            # JSON crudo, muy pesado para Meshtastic el otro.
+            mqtt_local.publicar_telemetria(
+                {"enlace": {"origen": "meshtastic"}, "dato": obj})
         time.sleep(0.01)

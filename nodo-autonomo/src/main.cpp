@@ -72,9 +72,15 @@
 // LED integrado (GPIO8)
 #define PIN_LED             8
 
+// UART al Faketec con Meshtastic
+// GPIO2 = TX, GPIO7 = RX - COMPROBAR QUE NO ESTÉN INVERTIDOS
+#define SERIAL1_RX         7
+#define SERIAL1_TX         2
+#define MESHTASTIC_BAUD    38400
+
 #define UART_BAUD          115200
 // Tiempo entre lecturas de los sensores y envío de los datos
-#define INTERVALO_MS       4920
+#define INTERVALO_MS       29920 // 30s para Meshtastic
 
 // Dirección I2C de los módulos
 #define AS3935_ADDR        0x03 // A0 y A1 a VCC
@@ -266,6 +272,9 @@ void setup() {
   mqttClient.setWill(MQTT_TOPIC_ESTADO, 1, true, "{\"estado\":\"offline\"}");
 #elif defined(TRANSPORTE_ESP_NOW)
   iniciarEspNow();
+#elif defined(TRANSPORTE_MESHTASTIC)
+  // UART al Faketec, que difunde por la malla LoRa.
+  Serial1.begin(MESHTASTIC_BAUD, SERIAL_8N1, SERIAL1_RX, SERIAL1_TX);
 #endif
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
@@ -343,6 +352,16 @@ void loop() {
   // Depuración por USB
   serializeJson(doc, Serial);
   Serial.println();
+#elif defined(TRANSPORTE_MESHTASTIC)
+  // JSON crudo por UART al Faketec (no cabe el wrapper en el límite de LoRa).
+  // serializeJson(doc, Serial1);
+  // Serial1.println();
+  Serial1.println("test");
+  // Depuración por USB
+  serializeJson(doc, Serial);
+  Serial.println();
+  // Depuración por USB de lo que se recibe del Faketec (malla LoRa)
+  if (Serial1.available()) Serial.write(Serial1.read());
 #endif
 
   // Parpadeo del LED integrado para indicar envío

@@ -63,6 +63,14 @@ Funciona! después de sacar las MACs de cada ESP32, es rapidísimo! al ser un pr
 
 ### Meshtastic
 
+Pasos:
+- Configurar cada Faketec con la red de Madrid (podríamos usar una propia, sería lo suyo)
+  - LoRa: BW: 62 | SF: 7 | CR: 5 | Slot: 4 | Freq: 869.618
+- Configurar un canal principal (AgrSta) común compartiendo la clave
+- Activar el serial a 38400 bauds con TEXTMSG y los pines que 
+- Configurar el Gatito Mobile para administrar esos nodos remotamente
+- 
+
 ## 2.1 Alimentación
 
 - INA226: Conectado por I2C entre el CN3791, la batería y el ESP32, permite medir con extrema precisión (16 bits) el voltaje de la batería, la corriente de carga/descarga y el consumo en vatios. Uso la [librería de RobTillaart](https://github.com/RobTillaart/INA226) para el INA226.
@@ -131,13 +139,19 @@ Todas las pruebas se ejecutan durante 10 minutos.
 | T0_0m | 0.3 | 115 | 100.0 | 0 | 5.17/5.19 | -39.0/-42 (n=115) | 0.0 | 1.665/3.222/61.454/3.531 | 3.81 | 182.25 | 25 | [1, 2, 4, 6, 10, 11] |
 | T1_10m_LOS | 10 | 116 | 100.0 | 0 | 5.17/5.21 | -69.8/-78 (n=116) | 0.0 | 4.067/15.569/93.774/10.148 | 3.8 | 183.94 | 11 | [1, 2, 4, 6, 10, 11] |
 | T2_10m_VLOS | 10 | 115 | 100.0 | 0 | 5.17/5.2 | -73.3/-76 (n=115) | 0.333333 | 2.577/7.344/212.359/11.513 | 3.75 | 186.22 | 11 | [1, 2, 4, 6, 10, 11] |
-| T5_usb | 0.3 | 116 | 100.0 | 0 | 5.17/5.18 | -/- (n=-) | - | -/-/-/- | - | - | - | - |
+| T5_usb | 0.3 | 116 | 100.0 | 0 | 5.17/5.18 | None/None (n=0) | - | -/-/-/- | 0.55 | 0.03 | - | - |
+| T6_0m_ESP-NOW | 0.3 | 116 | 100.0 | 0 | 5.17/5.43 | -48.1/-50 (n=116) | - | -/-/-/- | 3.71 | 182.09 | - | - |
+| T7_10m_LOS_ESP-NOW | 10 | 115 | 100.0 | 0 | 5.17/5.46 | -79.6/-88 (n=115) | - | -/-/-/- | 3.72 | 178.68 | - | - |
+| T8_10m_VLOS_ESP-NOW | 10 | 116 | 100.0 | 0 | 5.17/5.42 | -78.0/-82 (n=116) | - | -/-/-/- | 3.7 | 180.66 | - | - |
 
 Notas:
-- T0_0m: WiFi lado a lado
-- T1_10m_LOS: WiFi línea con visión directa
-- T2_10m_VLOS: WiFi línea con una puerta cerrada en medio
+- T0_0m: lado a lado
+- T1_10m_LOS: LOS
+- T2_10m_VLOS: VLOS
 - T5_usb: usb directo
+- T6_0m_ESP-NOW: ESP-NOW lado a lado
+- T7_10m_LOS_ESP-NOW: ESP-NOW línea con visión directa
+- T8_10m_VLOS_ESP-NOW: ESP-NOW línea con una puerta cerrada en medio
 
 ## USB
 
