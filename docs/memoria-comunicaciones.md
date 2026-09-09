@@ -196,7 +196,15 @@ Prueba T1_10m_VLOS:
 
 # 5. Estación auxiliar
 
-Cheap Yellow Display (CYD), puedo conectarle un sensor de temperatura y enviarlo también al MQTT de la estación base e incluso mostrarlo por la pantalla, no sé si se puede conectar mucho más porque las entradas son muy limitadas. Probablemente no usarlo para controlar relés porque complicaría las cosas, no?
+Cheap Yellow Display (CYD) <https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display>
+
+pioarduino, librerías:
+- <https://github.com/PaulStoffregen/XPT2046_Touchscreen>
+- <https://github.com/Bodmer/TFT_eSPI>
+
+Sigo este tutorial <https://randomnerdtutorials.com/programming-esp32-cyd-cheap-yellow-display-vs-code/>
+Tutorial para LVGL <https://randomnerdtutorials.com/lvgl-cheap-yellow-display-esp32-2432s028r/> y documentación <https://lvgl.io/docs/open/integration/frameworks/platformio>
+
 
 # 6. Conclusiones y mejoras futuras
 
@@ -213,3 +221,4 @@ Hay muchas mejoras que se pueden implementar en el sistema, entre ellas destaco:
 - Firmware del nodo autónomo actualizable vía *OTA*, uso de *secure boot*.
 - Usar mejores sensores de suelo ya que los empleados se corroen fácilmente como he comprobado.
 - Crear PCBs para todo el sistema, especialmente para el nodo autónomo, y así reducir su tamaño y coste.
+- Mejorar la estación auxiliar para incluir el accionamiento de los relés, la UI e integrar algún sensor que podmeos mandar al broker MQTT de la estación base.
