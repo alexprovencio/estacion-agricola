@@ -342,14 +342,14 @@ void loop() {
   leerEnergia(doc.as<JsonObject>());
   leerRayos(doc.as<JsonObject>());
 
-  // Reducir la precisión de los flotantes a 1 decimal: el payload es idéntico
-  // en todos los transportes y, aun con batería y rayo, cabe en un paquete LoRa.
+  // Reducir la precisión de los flotantes a 1 decimal: cabe en un paquete LoRa.
   doc["ta"] = roundf((float)doc["ta"] * 10) / 10;
   doc["ha"] = roundf((float)doc["ha"] * 10) / 10;
   doc["pa"] = roundf((float)doc["pa"] * 10) / 10;
   doc["lx"] = roundf((float)doc["lx"] * 10) / 10;
   doc["ts"] = roundf((float)doc["ts"] * 10) / 10;
-  doc["vb"] = roundf((float)doc["vb"] * 10) / 10;
+  // La batería necesita 2 decimales.
+  doc["vb"] = roundf((float)doc["vb"] * 100) / 100;
   doc["ia"] = roundf((float)doc["ia"] * 10) / 10;
   doc["pw"] = roundf((float)doc["pw"] * 10) / 10;
 
