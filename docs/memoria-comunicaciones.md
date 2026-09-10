@@ -256,6 +256,7 @@ pioarduino, librerías:
 Sigo este tutorial <https://randomnerdtutorials.com/programming-esp32-cyd-cheap-yellow-display-vs-code/>
 Tutorial para LVGL <https://randomnerdtutorials.com/lvgl-cheap-yellow-display-esp32-2432s028r/> y documentación <https://lvgl.io/docs/open/integration/frameworks/platformio>
 
+Simplifico, no uso LVGL, para el futuro. Tampoco uso TLS porque no funciona con la librería que ya sé manejar, no sé ni por qué!. 
 
 # 6. Conclusiones y mejoras futuras
 
