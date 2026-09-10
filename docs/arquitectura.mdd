@@ -1,0 +1,33 @@
+flowchart TB
+    subgraph Nodo["Nodo autónomo (ESP32-C3)"]
+        SENS["Sensores:<br/>AHT20+BMP280 · VEML7700 · GUVA<br/>Higrómetro · DS18B20 · AS3935 · INA226"]
+        JSON["JSON cada 30 s"]
+        SENS --> JSON
+    end
+
+    JSON -->|"UART 38400"| FTA["FakeTec A (Meshtastic)"]
+    FTA -->|"malla LoRa"| FTB["FakeTec B (Meshtastic)"]
+    FTB -->|"UART /dev/ttyAMA0"| GW["gateway_serial.py (inyector)"]
+    GW -->|"publica"| BROKER["Mosquitto<br/>8883 TLS · 1883 LAN"]
+
+    subgraph Base["Estación base (Raspberry Pi)"]
+        GW
+        BROKER
+        CONSUMER["nodo.py<br/>_procesar_telemetria + automatismos"]
+        SALIDAS["storage.py · pantalla.py (ST7789)<br/>perifericos.py (relés/LED/voz) · ubidots.py"]
+        ENTRADA["entrada.py (encoder EC11 + KEY0)"]
+        ENTRADA --> CONSUMER
+        CONSUMER --> SALIDAS
+    end
+
+    BROKER -->|"suscribe"| CONSUMER
+    CONSUMER -->|"esagrau/base/estado"| BROKER
+    SALIDAS -->|"MQTT + TLS 8883"| CLOUD["Ubidots (nube)"]
+    BROKER -->|"telemetría + estado relés"| CYD["Estación auxiliar (CYD)<br/>WiFi + AsyncMqttClient"]
+
+    subgraph CYDG["Estación Auxiliar (CYD)"]
+        CYD
+    end
+    ALT["Otros transportes (build targets):<br/>WiFi-MQTT · ESP-NOW (puente) · USB"]
+    JSON -.-> ALT
+    ALT -.-> GW
